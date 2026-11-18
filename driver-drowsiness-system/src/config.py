@@ -3,12 +3,15 @@ config.py
 Central configuration for the Driver Drowsiness Detection System.
 
 Every tunable constant lives here so thresholds, camera settings, alert
-settings, and logging settings can be changed in one place without touching
-the logic in the other modules.
+settings, emergency settings, and logging settings can be changed in one
+place without touching the logic in the other modules.
 """
 
 import platform
 from pathlib import Path
+
+# Project root (the folder that contains requirements.txt)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # ---------------------------------------------------------------------------
 # Camera settings
@@ -54,7 +57,7 @@ MIN_DETECTION_CONFIDENCE = 0.5
 MIN_TRACKING_CONFIDENCE = 0.5
 
 # ---------------------------------------------------------------------------
-# NEW: Auto-calibration settings
+# Auto-calibration settings
 # ---------------------------------------------------------------------------
 # How long the driver looks at the camera (eyes open, mouth closed) while
 # the system measures their personal baseline.
@@ -79,7 +82,7 @@ MAR_THRESHOLD_MIN = 0.20
 MAR_THRESHOLD_MAX = 1.00
 
 # ---------------------------------------------------------------------------
-# NEW: Sound alert settings
+# Sound alert settings
 # ---------------------------------------------------------------------------
 SOUND_FREQUENCY_HZ = 880          # beep pitch
 SOUND_DURATION_SEC = 0.6          # length of one beep
@@ -90,7 +93,7 @@ SOUND_SAMPLE_RATE = 22050         # samples per second for the generated tone
 SOUND_COOLDOWN_SEC = 2.0
 
 # ---------------------------------------------------------------------------
-# NEW: Live chart settings
+# Live chart settings
 # ---------------------------------------------------------------------------
 # Number of recent frames kept for the EAR / PERCLOS chart.
 CHART_HISTORY_FRAMES = 300
@@ -100,10 +103,10 @@ CHART_HISTORY_FRAMES = 300
 CHART_UPDATE_EVERY = 10
 
 # ---------------------------------------------------------------------------
-# NEW: Session logging settings
+# Session logging settings
 # ---------------------------------------------------------------------------
 # Logs go in a "logs" folder at the project root (next to requirements.txt).
-LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
+LOG_DIR = PROJECT_ROOT / "logs"
 
 # Column order of the CSV event log.
 LOG_COLUMNS = [
@@ -115,6 +118,87 @@ LOG_COLUMNS = [
     "perclos",
     "yawn_count",
 ]
+
+# ---------------------------------------------------------------------------
+# NEW: Local data files (contacts and sleep entries)
+# ---------------------------------------------------------------------------
+# Personal data stays on this computer in a "data" folder. Keep this folder
+# out of git (it is listed in .gitignore).
+DATA_DIR = PROJECT_ROOT / "data"
+CONTACTS_FILE = DATA_DIR / "contacts.json"
+SLEEP_LOG_FILE = DATA_DIR / "sleep_log.json"
+
+# ---------------------------------------------------------------------------
+# NEW: Emergency escalation settings
+# ---------------------------------------------------------------------------
+# The driver must stay in CRITICAL_DROWSY for this many seconds before the
+# countdown starts. This avoids reacting to a single long blink.
+EMERGENCY_CRITICAL_SECONDS = 10
+
+# After the trigger, the driver has this many seconds to press "I'm awake".
+# If nobody cancels, the alert goes to the emergency contacts.
+EMERGENCY_COUNTDOWN_SECONDS = 15
+
+# Minimum time between two real alerts, so a long drowsy episode does not
+# message the contacts again and again.
+EMERGENCY_COOLDOWN_SECONDS = 300
+
+# Dry run prints the message instead of sending it. Leave this True while
+# testing, and switch it off in the dashboard when you are ready.
+EMERGENCY_DRY_RUN_DEFAULT = True
+
+# ---------------------------------------------------------------------------
+# NEW: Telegram settings
+# ---------------------------------------------------------------------------
+# The bot token is read from this environment variable, never from code.
+#   Windows PowerShell:  $env:TELEGRAM_BOT_TOKEN = "123456:ABC..."
+#   Linux / macOS:       export TELEGRAM_BOT_TOKEN="123456:ABC..."
+TELEGRAM_TOKEN_ENV = "TELEGRAM_BOT_TOKEN"
+TELEGRAM_API_BASE = "https://api.telegram.org"
+TELEGRAM_TIMEOUT_SEC = 10
+SNAPSHOT_JPEG_QUALITY = 80        # quality of the photo sent with the alert
+
+# ---------------------------------------------------------------------------
+# NEW: Location settings
+# ---------------------------------------------------------------------------
+# Fallback used when the browser does not share its location. IP-based
+# location is only accurate to the city level.
+LOCATION_IP_URL = "https://ipapi.co/json/"
+LOCATION_TIMEOUT_SEC = 5
+MAP_LINK_TEMPLATE = "https://www.google.com/maps?q={lat},{lon}"
+
+# ---------------------------------------------------------------------------
+# NEW: Sleep advisor settings ("is it safe to travel now" score)
+# ---------------------------------------------------------------------------
+# The score starts at 100 and loses points for each risk factor below.
+SLEEP_TARGET_HOURS = 7.0                 # hours of sleep per night
+SLEEP_DEFICIT_PENALTY_PER_HOUR = 12      # points lost per missing hour (last night)
+
+SLEEP_DEBT_DAYS = 3                      # nights counted for accumulated debt
+SLEEP_DEBT_PENALTY_PER_HOUR = 4          # points lost per hour of debt
+
+AWAKE_FREE_HOURS = 16                    # hours awake before the penalty starts
+AWAKE_PENALTY_PER_HOUR = 5               # points lost per extra hour awake
+
+NIGHT_START_HOUR = 0                     # midnight to 6 am is the highest-risk window
+NIGHT_END_HOUR = 6
+NIGHT_PENALTY = 20
+
+AFTERNOON_DIP_START_HOUR = 13            # early afternoon dip
+AFTERNOON_DIP_END_HOUR = 15
+AFTERNOON_DIP_PENALTY = 5
+
+SAFE_SCORE_MIN = 70                      # 70 and above: SAFE
+CAUTION_SCORE_MIN = 40                   # 40 to 69: CAUTION, below 40: UNSAFE
+
+# ---------------------------------------------------------------------------
+# NEW: Chatbot settings (only the general Q&A needs these)
+# ---------------------------------------------------------------------------
+# Sleep logging and the safety score work without any API key.
+ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY"
+CHAT_MODEL = "claude-haiku-5-5"          # a low-cost model; change it if needed
+CHAT_MAX_TOKENS = 500
+CHAT_HISTORY_TURNS = 10                  # earlier messages sent with each question
 
 # ---------------------------------------------------------------------------
 # Serial / hardware settings (optional, only used if you add an Arduino)
