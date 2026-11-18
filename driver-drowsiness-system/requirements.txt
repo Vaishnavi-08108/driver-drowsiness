@@ -1,0 +1,19 @@
+# Driver Drowsiness Detection System
+# Python 3.10 or 3.11 recommended.
+
+# Face Mesh landmarks. Capped because newer releases are moving away from
+# the mp.solutions API that detector.py uses.
+mediapipe>=0.10.9,<0.10.22
+
+# Webcam capture and drawing. Use the contrib build only, and do not
+# install opencv-python alongside it.
+opencv-contrib-python>=4.8,<4.12
+
+# MediaPipe wheels from this range expect NumPy 1.x.
+numpy>=1.23,<2.0
+
+# Web dashboard.
+streamlit>=1.30,<2.0
+
+# Optional, only needed if you add the Arduino buzzer later:
+# pyserial>=3.5,<4.0
