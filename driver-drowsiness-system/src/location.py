@@ -1,125 +1,246 @@
+"""
+location.py
+Location tracking and geolocation provider for the Driver Drowsiness Detection System.
+
+Priority for locating the driver during an emergency:
+    1. Manual coordinates (if set by the user).
+    2. Fresh browser location (from HTML5 Geolocation API).
+    3. IP-based location fallback (via ipapi.co).
+    4. Stale browser location (if IP lookup fails).
+"""
+
 import json
+import math
+import time
 import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Optional, Union
 
 from src import config
-from src.location import (
-    BROWSER_MAX_AGE_SEC, IP_CACHE_SEC, IP_RETRY_SEC,
-    SOURCE_BROWSER, SOURCE_IP, SOURCE_MANUAL,
-    LocationProvider, describe, fetch_ip_location, make_location,
-    map_link, parse_browser_location, valid_coordinates,
-)
 
-BLR = (12.9716, 77.5946)
+SOURCE_BROWSER = "browser"
+SOURCE_IP = "ip"
+SOURCE_MANUAL = "manual"
+
+BROWSER_MAX_AGE_SEC = 300.0
+IP_CACHE_SEC = 1800.0
+IP_RETRY_SEC = 60.0
 
 
-class FakeResponse:
-    def __init__(self, body):
-        self._body = body
+@dataclass(frozen=True)
+class Location:
+    """Represents a geographic position."""
 
-    def read(self, n=-1):
-        return self._body[:n] if n > 0 else self._body
+    lat: float
+    lon: float
+    source: str
+    place: str = ""
+    accuracy_m: Optional[float] = None
+    timestamp: float = 0.0
 
-    def __enter__(self):
-        return self
 
-    def __exit__(self, *args):
+def valid_coordinates(lat: Any, lon: Any) -> bool:
+    """Validate that lat and lon are valid, non-zero geographic coordinates."""
+    if lat is None or lon is None:
+        return False
+    try:
+        lat_f = float(lat)
+        lon_f = float(lon)
+    except (ValueError, TypeError):
         return False
 
+    if math.isnan(lat_f) or math.isnan(lon_f) or math.isinf(lat_f) or math.isinf(lon_f):
+        return False
 
-def opener_returning(payload):
-    body = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
-    return lambda request, timeout=None: FakeResponse(body)
+    # (0, 0) is almost certainly invalid/placeholder data
+    if abs(lat_f) < 1e-6 and abs(lon_f) < 1e-6:
+        return False
 
-
-def failing_opener(request, timeout=None):
-    raise urllib.error.URLError("no internet")
-
-
-class CountingFetcher:
-    """Stands in for fetch_ip_location and counts the calls."""
-
-    def __init__(self, results):
-        self.results = list(results)
-        self.calls = 0
-
-    def __call__(self, now=None):
-        self.calls += 1
-        return self.results.pop(0) if self.results else None
+    return -90.0 <= lat_f <= 90.0 and -180.0 <= lon_f <= 180.0
 
 
-# 1. Coordinate validation
-assert valid_coordinates(12.9, 77.5) and valid_coordinates("12.9", "77.5")
-assert not valid_coordinates(91, 0.5) and not valid_coordinates(0.5, 181)
-assert not valid_coordinates(0, 0)                      # almost certainly "no data"
-assert not valid_coordinates(float("nan"), 5) and not valid_coordinates(None, 5)
-assert not valid_coordinates("abc", 5)
-assert make_location(*BLR, SOURCE_MANUAL, accuracy_m=-5, now=1.0).accuracy_m is None
-assert make_location(*BLR, SOURCE_MANUAL, accuracy_m=25, now=1.0).accuracy_m == 25.0
+def make_location(
+    lat: Any,
+    lon: Any,
+    source: str,
+    place: str = "",
+    accuracy_m: Optional[Any] = None,
+    now: Optional[float] = None,
+) -> Location:
+    """Construct a validated Location instance."""
+    lat_f = float(lat)
+    lon_f = float(lon)
+    t = time.time() if now is None else float(now)
 
-# 2. Map link and description
-loc = make_location(*BLR, SOURCE_BROWSER, accuracy_m=18.4, now=1.0)
-assert map_link(loc) == "https://www.google.com/maps?q=12.97160,77.59460"
-assert "18 m" in describe(loc)
-assert "IP address" in describe(make_location(*BLR, SOURCE_IP, place="Bengaluru", now=1.0))
-assert "by hand" in describe(make_location(*BLR, SOURCE_MANUAL, now=1.0))
+    acc = None
+    if accuracy_m is not None:
+        try:
+            val = float(accuracy_m)
+            if val > 0 and not math.isnan(val):
+                acc = val
+        except (ValueError, TypeError):
+            acc = None
 
-# 3. Browser payloads
-nested = {"coords": {"latitude": 12.9716, "longitude": 77.5946, "accuracy": 30}}
-flat = {"latitude": "12.9716", "longitude": "77.5946"}
-assert parse_browser_location(nested, now=5.0).accuracy_m == 30.0
-assert parse_browser_location(flat, now=5.0).lat == 12.9716
-assert parse_browser_location(None) is None
-assert parse_browser_location({"error": {"code": 1}}) is None   # permission denied
-assert parse_browser_location({"coords": {"latitude": 99, "longitude": 1}}) is None
+    return Location(
+        lat=lat_f,
+        lon=lon_f,
+        source=str(source),
+        place=str(place),
+        accuracy_m=acc,
+        timestamp=t,
+    )
 
-# 4. IP lookup parsing
-good = {"latitude": 12.97, "longitude": 77.59, "city": "Bengaluru",
-        "region": "Karnataka", "country_name": "India"}
-ip = fetch_ip_location(opener=opener_returning(good), now=7.0)
-assert ip.source == SOURCE_IP and ip.place == "Bengaluru, Karnataka, India"
-assert fetch_ip_location(opener=opener_returning({"error": True, "reason": "RateLimited"})) is None
-assert fetch_ip_location(opener=opener_returning(b"not json")) is None
-assert fetch_ip_location(opener=opener_returning([1, 2, 3])) is None
-assert fetch_ip_location(opener=failing_opener) is None          # network down
-assert fetch_ip_location(opener=opener_returning(good), url="file:///etc/passwd") is None
-assert fetch_ip_location(opener=opener_returning(good), url="http://example.com") is None
 
-# 5. Provider priority: fresh browser beats IP
-ip_loc = make_location(12.0, 77.0, SOURCE_IP, now=0.0)
-fetcher = CountingFetcher([ip_loc])
-p = LocationProvider(ip_fetcher=fetcher)
-assert p.update_from_browser(nested, now=100.0) is True
-assert p.current(now=200.0).source == SOURCE_BROWSER and fetcher.calls == 0
+def map_link(location: Location) -> str:
+    """Generate a Google Maps URL for the given location."""
+    return f"https://www.google.com/maps?q={location.lat:.5f},{location.lon:.5f}"
 
-# 6. A stale browser location falls back to IP
-stale_time = 100.0 + BROWSER_MAX_AGE_SEC + 1
-assert p.current(now=stale_time).source == SOURCE_IP and fetcher.calls == 1
 
-# 7. IP results are cached
-assert p.current(now=stale_time + 30).source == SOURCE_IP and fetcher.calls == 1
+def describe(location: Location) -> str:
+    """Generate a human-readable description of the location."""
+    parts = []
+    if location.source == SOURCE_MANUAL:
+        parts.append(f"{location.lat:.4f}, {location.lon:.4f} (entered by hand)")
+    elif location.source == SOURCE_IP:
+        desc = f"{location.lat:.4f}, {location.lon:.4f} (approximate, via IP address"
+        if location.place:
+            desc += f": {location.place}"
+        desc += ")"
+        parts.append(desc)
+    else:
+        acc_text = f" (~{int(round(location.accuracy_m))} m accuracy)" if location.accuracy_m is not None else ""
+        parts.append(f"{location.lat:.4f}, {location.lon:.4f}{acc_text}")
 
-# 8. Manual coordinates override everything, until cleared
-assert p.set_manual(10.0, 76.0, now=stale_time) is True
-assert p.current(now=stale_time).source == SOURCE_MANUAL
-assert p.set_manual(500, 76.0) is False
-p.clear_manual()
-assert p.current(now=stale_time + 31).source == SOURCE_IP
+    return " ".join(parts)
 
-# 9. A failed IP lookup is not retried at once, and the stale browser is the fallback
-fetcher2 = CountingFetcher([])                       # always fails
-p2 = LocationProvider(ip_fetcher=fetcher2)
-assert p2.current(now=0.0) is None and fetcher2.calls == 1
-assert p2.current(now=IP_RETRY_SEC - 1) is None and fetcher2.calls == 1   # throttled
-assert p2.current(now=IP_RETRY_SEC + 1) is None and fetcher2.calls == 2   # retried
-p2.update_from_browser(flat, now=1000.0)
-stale = p2.current(now=1000.0 + BROWSER_MAX_AGE_SEC + 10)
-assert stale is not None and stale.source == SOURCE_BROWSER
 
-# 10. An expired IP result is refreshed, and an old one survives a failed refresh
-fresh_ip = make_location(13.0, 77.0, SOURCE_IP, now=0.0)
-fetcher3 = CountingFetcher([fresh_ip])               # one success, then failures
-p3 = LocationProvider(ip_fetcher=fetcher3)
-assert p3.current(now=0.0).lat == 13.0
-assert p3.current(now=IP_CACHE_SEC + 1).lat == 13.0 and fetcher3.calls == 2
+def parse_browser_location(payload: Any, now: Optional[float] = None) -> Optional[Location]:
+    """Parse geolocation JSON payload received from browser JavaScript."""
+    if not isinstance(payload, dict) or "error" in payload:
+        return None
 
-print("All location tests passed")
+    if "coords" in payload and isinstance(payload["coords"], dict):
+        coords = payload["coords"]
+        lat = coords.get("latitude")
+        lon = coords.get("longitude")
+        acc = coords.get("accuracy")
+    else:
+        lat = payload.get("latitude")
+        lon = payload.get("longitude")
+        acc = payload.get("accuracy")
+
+    if not valid_coordinates(lat, lon):
+        return None
+
+    return make_location(lat, lon, SOURCE_BROWSER, accuracy_m=acc, now=now)
+
+
+def fetch_ip_location(
+    opener: Callable[..., Any] = urllib.request.urlopen,
+    url: str = config.LOCATION_IP_URL,
+    timeout: float = config.LOCATION_TIMEOUT_SEC,
+    now: Optional[float] = None,
+) -> Optional[Location]:
+    """Fetch geographic location based on public IP address."""
+    if not url.startswith("https://ipapi.co"):
+        return None
+
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "driver-drowsiness-system/1.0"})
+        with opener(req, timeout=timeout) as resp:
+            raw = resp.read(65536)
+            data = json.loads(raw.decode("utf-8"))
+            if not isinstance(data, dict) or data.get("error"):
+                return None
+
+            lat = data.get("latitude")
+            lon = data.get("longitude")
+            if not valid_coordinates(lat, lon):
+                return None
+
+            place_parts = [data.get("city"), data.get("region"), data.get("country_name")]
+            place = ", ".join(p for p in place_parts if p)
+
+            return make_location(lat, lon, SOURCE_IP, place=place, now=now)
+    except Exception:
+        return None
+
+
+class LocationProvider:
+    """Manages location resolution across browser GPS, manual override, and IP fallbacks."""
+
+    def __init__(self, ip_fetcher: Optional[Callable[..., Optional[Location]]] = None) -> None:
+        self._fetcher = ip_fetcher if ip_fetcher is not None else fetch_ip_location
+        self._manual: Optional[Location] = None
+        self._browser: Optional[Location] = None
+        self._ip: Optional[Location] = None
+        self._last_ip_attempt: float = -1e9
+
+    def update_from_browser(self, payload: Any, now: Optional[float] = None) -> bool:
+        """Update provider with new browser geolocation payload."""
+        loc = parse_browser_location(payload, now=now)
+        if loc is not None:
+            self._browser = loc
+            return True
+        return False
+
+    def set_manual(self, lat: Any, lon: Any, now: Optional[float] = None) -> bool:
+        """Set a manual coordinate override."""
+        if not valid_coordinates(lat, lon):
+            return False
+        self._manual = make_location(lat, lon, SOURCE_MANUAL, now=now)
+        return True
+
+    def clear_manual(self) -> None:
+        """Clear any active manual coordinate override."""
+        self._manual = None
+
+    def current_precise(self, now: Optional[float] = None) -> Optional[Location]:
+        """Resolve only manual or fresh browser GPS coordinates."""
+        t = time.time() if now is None else float(now)
+
+        if self._manual is not None:
+            return self._manual
+
+        if self._browser is not None and (t - self._browser.timestamp <= BROWSER_MAX_AGE_SEC):
+            return self._browser
+
+        return None
+
+    def current(self, now: Optional[float] = None) -> Optional[Location]:
+        """Resolve current location according to priority rules."""
+        t = time.time() if now is None else float(now)
+
+        # 1. Manual coordinates override everything
+        if self._manual is not None:
+            return self._manual
+
+        # 2. Fresh browser location
+        if self._browser is not None and (t - self._browser.timestamp <= BROWSER_MAX_AGE_SEC):
+            return self._browser
+
+        # 3. IP location cache check
+        if self._ip is not None and (t - self._ip.timestamp <= IP_CACHE_SEC):
+            return self._ip
+
+        # 4. Attempt IP fetch if throttled retry window has passed
+        if (t - self._last_ip_attempt) >= IP_RETRY_SEC:
+            self._last_ip_attempt = t
+            try:
+                new_ip = self._fetcher(now=t)
+                if new_ip is not None:
+                    self._ip = new_ip
+                    return self._ip
+            except Exception:
+                pass
+
+        # If IP fetch failed, an expired IP result survives
+        if self._ip is not None:
+            return self._ip
+
+        # If no IP, stale browser location is the next fallback
+        if self._browser is not None:
+            return self._browser
+
+        return None

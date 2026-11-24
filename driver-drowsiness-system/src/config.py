@@ -7,11 +7,24 @@ settings, emergency settings, and logging settings can be changed in one
 place without touching the logic in the other modules.
 """
 
+import os
 import platform
 from pathlib import Path
 
 # Project root (the folder that contains requirements.txt)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# Auto-load .env into os.environ if present
+_env_path = PROJECT_ROOT / ".env"
+if _env_path.exists():
+    try:
+        for _line in _env_path.read_text(encoding="utf-8").splitlines():
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _v = _line.split("=", 1)
+                os.environ.setdefault(_k.strip(), _v.strip())
+    except Exception:
+        pass
 
 # ---------------------------------------------------------------------------
 # Camera settings
@@ -127,6 +140,7 @@ LOG_COLUMNS = [
 DATA_DIR = PROJECT_ROOT / "data"
 CONTACTS_FILE = DATA_DIR / "contacts.json"
 SLEEP_LOG_FILE = DATA_DIR / "sleep_log.json"
+MAX_CONTACTS = 5
 
 # ---------------------------------------------------------------------------
 # NEW: Emergency escalation settings
@@ -141,7 +155,7 @@ EMERGENCY_COUNTDOWN_SECONDS = 15
 
 # Minimum time between two real alerts, so a long drowsy episode does not
 # message the contacts again and again.
-EMERGENCY_COOLDOWN_SECONDS = 300
+EMERGENCY_COOLDOWN_SECONDS = 60     # Repeat every minute while testing; use 300 for production
 
 # Dry run prints the message instead of sending it. Leave this True while
 # testing, and switch it off in the dashboard when you are ready.

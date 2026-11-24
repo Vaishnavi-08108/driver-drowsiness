@@ -6,3 +6,5 @@ logs/
 *.wav
 data/
 .env
+*.bad
+*.tmp

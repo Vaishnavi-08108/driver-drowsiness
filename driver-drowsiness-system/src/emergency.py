@@ -347,6 +347,7 @@ class EmergencyManager:
             self._countdown_started = 0.0
             self._recovered_since: Optional[float] = None
             self._cooldown_until = 0.0
+            self._repeat_eligible = False
             self._send_started = 0.0
             self._send_done = False
             self.report: Optional[AlertReport] = None
@@ -391,6 +392,14 @@ class EmergencyManager:
         event = ""
 
         with self._lock:
+            if self.phase in (PHASE_SENDING, PHASE_COOLDOWN):
+                if critical:
+                    if self._critical_since is None:
+                        self._critical_since = now
+                else:
+                    self._critical_since = None
+                    self._repeat_eligible = False
+
             # A finished background send moves us into the cooldown
             if self.phase == PHASE_SENDING and self._send_done:
                 self.phase = PHASE_COOLDOWN
@@ -401,9 +410,14 @@ class EmergencyManager:
                 event = self._update_idle(critical, ready, now) or event
             elif self.phase == PHASE_COUNTDOWN:
                 event = self._update_countdown(critical, awake, now) or event
-            elif self.phase == PHASE_COOLDOWN and now >= self._cooldown_until:
-                self.phase = PHASE_IDLE
-                self._critical_since = None
+            elif self.phase == PHASE_COOLDOWN:
+                if now >= self._cooldown_until:
+                    if critical and self._repeat_eligible and ready:
+                        self._start_send(now, critical=True)
+                        event = EVENT_ALERT_SENDING
+                    else:
+                        self.phase = PHASE_IDLE
+                        event = self._update_idle(critical, ready, now) or event
 
             return self._status(now, ready, problems, event)
 
@@ -435,7 +449,7 @@ class EmergencyManager:
             self._recovered_since = None
 
         if now - self._countdown_started >= self.countdown_seconds:
-            self._start_send(now)
+            self._start_send(now, critical)
             return EVENT_ALERT_SENDING
         return ""
 
@@ -465,8 +479,9 @@ class EmergencyManager:
     # -----------------------------------------------------------------------
     # Sending
     # -----------------------------------------------------------------------
-    def _start_send(self, now: float) -> None:
+    def _start_send(self, now: float, critical: bool) -> None:
         self.phase = PHASE_SENDING
+        self._repeat_eligible = critical
         self._send_started = now
         self._send_done = False
 

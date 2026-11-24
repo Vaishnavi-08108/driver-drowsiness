@@ -12,7 +12,7 @@ from src.emergency import (
     PHASE_SENDING, RECOVERY_SECONDS, EmergencyManager, SendResult,
     TelegramClient, build_alert_text,
 )
-from src.location import SOURCE_MANUAL, make_location
+from src.location import SOURCE_BROWSER, SOURCE_MANUAL, LocationProvider, make_location
 
 CRIT, ALERT = config.STATE_CRITICAL_DROWSY, config.STATE_ALERT
 TOKEN = "123456:SECRET-TOKEN"
@@ -65,8 +65,13 @@ def feed(mgr, state, t0, t1, face=True, step=0.5):
     return status
 
 
+_mgr_seq = 0
+
+
 def make_manager(tmp, client=None, dry_run=False, n_contacts=2, **kw):
-    book = ContactBook(Path(tmp) / f"contacts_{id(kw)}_{n_contacts}.json")
+    global _mgr_seq
+    _mgr_seq += 1
+    book = ContactBook(Path(tmp) / f"contacts_{_mgr_seq}_{n_contacts}.json")
     for i in range(n_contacts):
         book.add(f"Contact {i}", f"90000000{i}")
     return EmergencyManager(
@@ -117,8 +122,10 @@ with tempfile.TemporaryDirectory() as tmp:
     assert s.phase == PHASE_IDLE
     m = make_manager(tmp)
     feed(m, CRIT, 0, 10)
-    s = feed(m, ALERT, 10.5, 30, face=False)       # driver slumps out of view
-    assert s.phase in (PHASE_COUNTDOWN, PHASE_SENDING)
+    s = feed(m, ALERT, 10.5, 20, face=False)       # driver slumps out of view
+    assert s.phase == PHASE_COUNTDOWN
+    s = feed(m, ALERT, 20.5, 30, face=False)
+    assert s.phase in (PHASE_SENDING, PHASE_COOLDOWN)
 
     # 6. Expiry sends to every contact with location, snapshot, and no token leak
     client = FakeClient()
@@ -134,13 +141,41 @@ with tempfile.TemporaryDirectory() as tmp:
     assert s.report.delivered == 2 and "delivered to 2 of 2" in s.report.summary()
     assert "******" in s.report.recipients[0].chat_id          # masked in the report
 
+    # 6b. Browser GPS updates on the shared provider reach real alert messages.
+    browser_locations = LocationProvider(ip_fetcher=lambda now=None: None)
+    assert browser_locations.update_from_browser(
+        {"latitude": 12.9716, "longitude": 77.5946, "accuracy": 18.0}
+    )
+    browser_book = ContactBook(Path(tmp) / "browser_contacts.json")
+    browser_book.add("Contact", "900000001")
+    browser_client = FakeClient()
+    browser_manager = EmergencyManager(
+        browser_book,
+        browser_locations,
+        snapshot_provider=lambda: b"\xff\xd8JPEG",
+        client=browser_client,
+        driver_name="Vaishnavi",
+        dry_run=False,
+        threaded=False,
+        retry_delay=0,
+        wall_clock=lambda: 1_700_000_000.0,
+    )
+    feed(browser_manager, CRIT, 0, 25.5)
+    assert len(browser_client.messages) == 1
+    assert "maps?q=12.97160,77.59460" in browser_client.messages[0][1]
+    assert browser_manager.report.location.source == SOURCE_BROWSER
+
     # 7. The cooldown blocks a second alert until it ends, then it works again
+    client = FakeClient()
+    m = make_manager(tmp, client=client, cooldown_seconds=300)
+    feed(m, CRIT, 0, 25)
+    assert len(client.messages) == 2
+    assert m.update(CRIT, True, now=25.5).phase == PHASE_COOLDOWN
     s = feed(m, CRIT, 26, 120)
     assert s.phase == PHASE_COOLDOWN and len(client.messages) == 2
-    s = m.update(CRIT, True, now=10 + 15 + 300 + 1)
-    assert s.phase == PHASE_IDLE
-    s = feed(m, CRIT, 326, 337)
-    assert s.phase in (PHASE_COUNTDOWN, PHASE_SENDING)
+    s = m.update(CRIT, True, now=10 + 15 + 300)
+    assert s.phase == PHASE_SENDING and s.event == EVENT_ALERT_SENDING
+    assert len(client.messages) == 4
 
     # 8. Dry run builds the report and sends nothing
     client = FakeClient()
@@ -276,5 +311,42 @@ with tempfile.TemporaryDirectory() as tmp:
     m = make_manager(tmp, client=firm, n_contacts=1)
     feed(m, CRIT, 0, 26)
     assert firm.n == 1
+
+# 21. A continuous critical episode sends a fresh snapshot after cooldown
+with tempfile.TemporaryDirectory() as tmp:
+    client = FakeClient()
+    m = make_manager(tmp, client=client, n_contacts=1, cooldown_seconds=60)
+    snapshots = []
+    m._snapshot_provider = lambda: snapshots.append(len(snapshots) + 1) or f"snapshot-{len(snapshots)}".encode()
+
+    feed(m, CRIT, 0, 25)
+    assert len(client.messages) == 1 and len(client.photos) == 1
+    assert client.photos[0][1] == b"snapshot-1"
+    assert m.update(CRIT, True, now=25.5).phase == PHASE_COOLDOWN
+    feed(m, CRIT, 26, 84.5)
+    assert len(client.messages) == 1
+
+    s = m.update(CRIT, True, now=85)
+    assert s.phase == PHASE_SENDING and s.event == EVENT_ALERT_SENDING
+    assert len(client.messages) == 2 and len(client.photos) == 2
+    assert client.photos[1][1] == b"snapshot-2"
+
+# 22. Recovery during cooldown prevents an immediate repeat; a new episode
+#     must pass the original critical and countdown timers.
+with tempfile.TemporaryDirectory() as tmp:
+    client = FakeClient()
+    m = make_manager(tmp, client=client, n_contacts=1, cooldown_seconds=60)
+    feed(m, CRIT, 0, 25)
+    m.update(CRIT, True, now=25.5)
+    m.update(ALERT, True, now=30)
+
+    s = m.update(ALERT, True, now=85)
+    assert s.phase == PHASE_IDLE and len(client.messages) == 1
+
+    m.update(CRIT, True, now=85.5)
+    s = m.update(CRIT, True, now=95.5)
+    assert s.phase == PHASE_COUNTDOWN and len(client.messages) == 1
+    s = m.update(CRIT, True, now=110.5)
+    assert s.phase == PHASE_SENDING and len(client.messages) == 2
 
 print("All emergency tests passed")

@@ -45,6 +45,10 @@ class Contact:
     chat_id: str            # stored as text so a leading minus sign is kept
     relation: str = ""      # for example "Mother" or "Friend"
 
+    @property
+    def relationship(self) -> str:
+        return self.relation
+
 
 def mask_chat_id(chat_id: str) -> str:
     """Hide all but the last 3 digits, for example '******789'."""
@@ -81,14 +85,21 @@ class ContactBook:
     # -----------------------------------------------------------------------
     # Changing
     # -----------------------------------------------------------------------
-    def add(self, name: str, chat_id: str, relation: str = "") -> Contact:
+    def add(
+        self,
+        name: str,
+        chat_id: str,
+        relation: str = "",
+        relationship: Optional[str] = None,
+    ) -> Contact:
         """
         Validate, add, and save a contact.
 
         Raises:
             ContactError: bad name or chat ID, duplicate ID, or list is full.
         """
-        contact = self._validated(name, chat_id, relation)
+        rel = relationship if relationship is not None else relation
+        contact = self._validated(name, chat_id, rel)
         if len(self._contacts) >= MAX_CONTACTS:
             raise ContactError(f"You can save at most {MAX_CONTACTS} contacts.")
         if contact.chat_id in self.chat_ids():
@@ -97,10 +108,10 @@ class ContactBook:
         self.save()
         return contact
 
-    def remove(self, chat_id: str) -> bool:
-        """Remove the contact with this chat ID. Returns True if one was removed."""
-        chat_id = str(chat_id).strip()
-        kept = [c for c in self._contacts if c.chat_id != chat_id]
+    def remove(self, identifier: str) -> bool:
+        """Remove the contact with this chat ID or name. Returns True if one was removed."""
+        val = str(identifier).strip()
+        kept = [c for c in self._contacts if c.chat_id != val and c.name != val]
         if len(kept) == len(self._contacts):
             return False
         self._contacts = kept
