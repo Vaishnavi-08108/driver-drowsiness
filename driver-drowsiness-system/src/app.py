@@ -1145,6 +1145,7 @@ def main() -> None:
         initial_sidebar_state="expanded",
     )
     inject_css()
+    st.markdown('<style>.stApp{background:#f2f3f5!important}[data-testid="stSidebar"]{background:white!important;border-right:1px solid #e5e7eb!important}[data-testid="stSidebar"] p,[data-testid="stSidebar"] label,[data-testid="stSidebar"] h3{color:#242830!important}[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked){background:#e8f4ed!important;border-color:#cde8d7!important}.card{background:white!important;border:1px solid #e8e9ec!important;border-radius:16px!important;box-shadow:none!important}[data-testid="stButton"] button[kind="primary"]{background:#176b49!important;color:white!important}</style>', unsafe_allow_html=True)
     init_session_state()
 
     # -----------------------------------------------------------------------
@@ -1156,8 +1157,8 @@ def main() -> None:
             <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
                 <div style="width:42px;height:42px;border-radius:14px;background:#1D5262;color:#B9F5EB;display:flex;align-items:center;justify-content:center;font-size:1.15rem;font-weight:700;">SD</div>
                 <div>
-                    <div style="font-size: 1.15rem; font-weight: 700; color: #F1F7FF; line-height: 1.1;">SafeDrive AI</div>
-                    <div style="font-size: 0.72rem; color: #A5B9CE; font-weight: 600;">DRIVER SAFETY SYSTEM</div>
+                    <div style="font-size: 1.15rem; font-weight: 700; color: #171a20; line-height: 1.1;">SafeDrive AI</div>
+                    <div style="font-size: 0.72rem; color: #64748b; font-weight: 600;">DRIVER SAFETY SYSTEM</div>
                 </div>
             </div>
             """,
@@ -1195,6 +1196,7 @@ def main() -> None:
         st.markdown("<p style='font-size: 0.75rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin: 16px 0 4px 0; letter-spacing: 0.5px;'>NAVIGATION</p>", unsafe_allow_html=True)
 
         NAV_OPTIONS = [
+            "Overview",
             "Live Monitor",
             "Travel Readiness",
             "Emergency",
@@ -1204,6 +1206,7 @@ def main() -> None:
             "Navigation",
             NAV_OPTIONS,
             index=0,
+            key="workspace_page",
             label_visibility="collapsed",
         )
 
@@ -1248,7 +1251,32 @@ def main() -> None:
     # -----------------------------------------------------------------------
     # Main Page Router based on Left Sidebar Selection
     # -----------------------------------------------------------------------
-    if selected_page == "Live Monitor":
+    if selected_page == "Overview":
+        if st.session_state.logger is not None:
+            close_session()
+        release_camera()
+        release_extractor()
+        import streamlit.components.v1 as components
+        components.html("<style>body{margin:0;font:16px system-ui;color:white}.hero{height:250px;border-radius:20px;background:radial-gradient(at 80% 20%,#365e85,#101d30 70%);display:flex;align-items:center;padding:0 5%;gap:5%}h1{font-size:40px;line-height:1.05;margin:12px 0}small{color:#a9e6ce;letter-spacing:2px}p{color:#cbd5e1}canvas{width:45%;height:230px;cursor:grab;touch-action:none}</style><div class=\"hero\"><div style=\"flex:1\"><small>SAFEDRIVE INTELLIGENCE</small><h1>Stay alert.<br>Arrive safe.</h1><p>Every journey starts with awareness.</p></div><canvas id=\"car\"></canvas></div><script>let c=document.querySelector('canvas'),g=c.getContext('2d'),a=.6,last=0,drag=false;function draw(){let w=c.clientWidth,h=c.clientHeight;c.width=w*2;c.height=h*2;g.scale(2,2);let s=Math.min(w/5,h/3);function p([x,y,z]){let X=x*Math.cos(a)-z*Math.sin(a),Z=x*Math.sin(a)+z*Math.cos(a);return[w/2+X*s,h*.6+(Z*.4-y)*s,Z]}let f=[];function box(x,y,z,l,b,d,col){let v=[[x,y,z],[x+l,y,z],[x+l,y+b,z],[x,y+b,z],[x,y,z+d],[x+l,y,z+d],[x+l,y+b,z+d],[x,y+b,z+d]].map(p);[[0,1,2,3],[4,5,6,7],[0,4,7,3],[1,5,6,2],[3,2,6,7]].forEach((q,i)=>f.push([q.map(j=>v[j]),col[i%col.length]]))}box(-1.8,0,-.75,3.6,.48,1.5,['#8aa9c5','#c9e1ef','#7799b9','#a4c6dd','#f0f8ff']);box(-.85,.48,-.58,1.7,.57,1.16,['#29485f','#527b99','#29485f','#527b99','#c5dbea']);for(let x of [-1.2,1.2])for(let z of [-.86,.62])box(x-.25,-.2,z,.5,.45,.24,['#14202c','#283744']);f.sort((u,v)=>u[0].reduce((s,p)=>s+p[2],0)-v[0].reduce((s,p)=>s+p[2],0));for(let [v,col] of f){g.beginPath();v.forEach((p,i)=>i?g.lineTo(...p.slice(0,2)):g.moveTo(...p.slice(0,2)));g.closePath();g.fillStyle=col;g.fill()}g.fillStyle='#cbd5e1';g.font='12px system-ui';g.textAlign='center';g.fillText('Drag to rotate',w/2,h-10)}c.onpointerdown=e=>{drag=true;last=e.clientX;c.setPointerCapture(e.pointerId)};c.onpointermove=e=>{if(drag){a+=(e.clientX-last)*.015;last=e.clientX;draw()}};c.onpointerup=c.onpointercancel=()=>drag=false;new ResizeObserver(draw).observe(c);draw()</script>", height=260)
+        readiness = st.session_state.sleep_advisor.check_readiness()
+        a, b = st.columns(2)
+        a.metric("Travel readiness", f"{readiness.score}/100")
+        b.metric("Readiness assessment", readiness.verdict)
+        st.subheader("Your workspace")
+        def open_page(page):
+            st.session_state.workspace_page = page
+        for items in [
+            [("Travel Readiness", "Prepare for your trip"), ("Emergency", "Configure location and contacts")],
+            [("Live Monitor", "Monitor fatigue in real time"), ("AI Assistant", "Explore sleep and safety guidance")],
+        ]:
+            for col, (page, description) in zip(st.columns(2), items):
+                with col:
+                    with st.container(border=True):
+                        st.subheader(page)
+                        st.write(description)
+                        st.button("Open " + page, key="home_" + page, on_click=open_page, args=(page,), use_container_width=True)
+        st.caption("Prototype only. Never rely on this application instead of rest or safe driving decisions.")
+    elif selected_page == "Live Monitor":
         calib_message = st.session_state.pop("calib_message", None)
 
         if running and st.session_state.logger is None:
