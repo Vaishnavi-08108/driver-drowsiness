@@ -126,11 +126,16 @@ class TelegramClient:
             self.location_status = error or "Invalid Telegram updates response."
             return None
         latest = None
+        paired_messages = 0
+        other_location = False
         for update in updates:
             msg = update.get("edited_message") or update.get("message") or {}
             chat = msg.get("chat", {})
             if chat.get("type") != "private" or str(chat.get("id")) != driver_chat:
+                if isinstance(msg.get("location"), dict):
+                    other_location = True
                 continue
+            paired_messages += 1
             loc = msg.get("location")
             if not isinstance(loc, dict):
                 continue
@@ -138,13 +143,13 @@ class TelegramClient:
             if latest is None or stamp >= latest[0]:
                 latest = (stamp, loc, msg)
         if latest is None:
-            self.location_status = "No location update from the paired private chat."
+            self.location_status = ("Location received from a different chat; verify your own driver chat ID." if other_location else "Paired chat found, but no location message. Send a new location directly to this bot." if paired_messages else "No recent messages from paired chat. Send /start and a new location to this bot.")
             return None
         stamp, loc, msg = latest
         now = time.time()
         period = loc.get("live_period", 0)
-        if not period or now >= msg.get("date", 0) + period:
-            self.location_status = "Live location is missing or expired. Share live location again."
+        if period and now >= msg.get("date", 0) + period:
+            self.location_status = "Live location expired. Share live location again."
             return None
         if not 0 <= now - stamp <= 60:
             self.location_status = f"Last phone update is {now - stamp:.0f} seconds old; waiting for a fresh update."
@@ -157,7 +162,7 @@ class TelegramClient:
         if fix.accuracy_m is not None and fix.accuracy_m > 50:
             self.location_status = f"Phone uncertainty is {fix.accuracy_m:.0f} m; exceeds 50 m."
             return None
-        self.location_status = "Recent phone location received."
+        self.location_status = "Recent phone location received (live or manually shared)."
         return fix
 
     def send_location(self, chat_id: str, location: Location) -> SendResult:
@@ -289,7 +294,7 @@ def build_alert_text(
     if location is not None:
         lines.append(f"Location: {describe(location)}")
         if location.source == "phone_telegram":
-            lines.append("Source: driver phone live location; accuracy not reported." if location.accuracy_m is None else "Source: driver phone live location.")
+            lines.append("Source: recent driver phone location; accuracy not reported." if location.accuracy_m is None else "Source: driver phone live location.")
         lines.append(map_link(location))
     else:
         lines.append("Location: no recent accurate device fix available; please confirm the driver’s location directly.")
