@@ -301,6 +301,47 @@ def inject_css() -> None:
             border-radius: 10px !important;
         }
 
+        /* SafeDrive cockpit visual system */
+        :root {
+            --clinical-bg: #F3F6FA;
+            --clinical-surface: #FFFFFF;
+            --clinical-text: #14243A;
+            --clinical-muted: #53677D;
+            --clinical-border: #DCE5EF;
+            --clinical-primary: #087E82;
+            --clinical-primary-soft: #E1F4F3;
+        }
+        html, body, .stApp { background: var(--clinical-bg) !important; }
+        [data-testid="stHeader"] { background: rgba(243,246,250,.94); }
+        .block-container { max-width: 1480px; padding: 2.5rem 2.5rem 4rem !important; }
+        h1, .page-header { font-size: clamp(1.9rem, 3vw, 2.8rem) !important; letter-spacing: -.045em !important; }
+        [data-testid="stSidebar"] { background: #101F33 !important; border: none; }
+        [data-testid="stSidebar"] > div:first-child { width: auto; padding: 1.5rem 1rem; }
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] label p,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3 { color: #DCE7F5 !important; }
+        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label { border-radius: 9px; }
+        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:hover { background: #203650; }
+        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:has(input:checked) { background: #193E50 !important; border-color: #397B87 !important; }
+        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:has(input:checked) p { color: #B9F5EB !important; }
+        [data-testid="stSidebar"] hr { border-color: #33465D; }
+        .card { border-radius: 18px; padding: 22px; min-height: 142px; border-top: 3px solid var(--accent, #087E82); box-shadow: 0 4px 16px rgba(20,36,58,.055); }
+        .card .value { font-variant-numeric: tabular-nums; }
+        .card .sub { line-height: 1.5; }
+        .badge { border-radius: 10px; padding: 16px; }
+        .countdown-banner { border: 2px solid #C83C42; background: #FFF1F2; color: #8D2028; font-size: 1.15rem; }
+        [data-testid="stVerticalBlockBorderWrapper"], [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlockBorderWrapper"] { border-radius: 18px; }
+        [data-testid="stButton"] button, [data-testid="stLinkButton"] a { min-height: 44px; border-radius: 9px !important; white-space: normal; }
+        [data-testid="stButton"] button:focus-visible, [data-testid="stLinkButton"] a:focus-visible { outline: 3px solid #18A7A0; outline-offset: 3px; }
+        [data-testid="stImage"] img { border-radius: 14px; }
+        [data-testid="stExpander"] { border-radius: 12px; }
+        [data-testid="stSidebar"] [data-testid="stButton"] button[kind="primary"] { background: #087E82 !important; color: white !important; }
+        @media (max-width: 900px) {
+            .block-container { padding: 1.5rem 1rem 3rem !important; }
+        }
+
         @media (max-width: 900px) {
             [data-testid="stSidebar"] > div:first-child {
                 width: 100%;
@@ -1109,10 +1150,10 @@ def main() -> None:
         st.markdown(
             """
             <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
-                <div style="width:42px;height:42px;border-radius:14px;background:#E8F3F1;color:#3A7D78;display:flex;align-items:center;justify-content:center;font-size:1.15rem;font-weight:700;">SD</div>
+                <div style="width:42px;height:42px;border-radius:14px;background:#1D5262;color:#B9F5EB;display:flex;align-items:center;justify-content:center;font-size:1.15rem;font-weight:700;">SD</div>
                 <div>
-                    <div style="font-size: 1.15rem; font-weight: 700; color: #18312E; line-height: 1.1;">SafeDrive AI</div>
-                    <div style="font-size: 0.72rem; color: #718783; font-weight: 600;">Driver safety</div>
+                    <div style="font-size: 1.15rem; font-weight: 700; color: #F1F7FF; line-height: 1.1;">SafeDrive AI</div>
+                    <div style="font-size: 0.72rem; color: #A5B9CE; font-weight: 600;">DRIVER SAFETY SYSTEM</div>
                 </div>
             </div>
             """,
