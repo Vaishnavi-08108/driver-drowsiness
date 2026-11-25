@@ -907,9 +907,9 @@ def render_emergency_tab(request_fresh_location: bool = False) -> None:
                 phone_client = TelegramClient()
                 phone_fix = phone_client.phone_location()
                 if phone_fix is None:
-                    st.warning(phone_client.location_status)
+                    st.warning(getattr(phone_client, "location_status", "Phone location unavailable. Restart Streamlit to reload the updated backend."))
                 else:
-                    st.success(phone_client.location_status)
+                    st.success(getattr(phone_client, "location_status", "Phone location unavailable. Restart Streamlit to reload the updated backend."))
                     st.write(describe(phone_fix))
                     st.link_button("Verify phone pin", map_link(phone_fix))
 
