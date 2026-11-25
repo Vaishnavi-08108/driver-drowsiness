@@ -236,7 +236,7 @@ def build_alert_text(
         lines.append(f"Location: {describe(location)}")
         lines.append(map_link(location))
     else:
-        lines.append("Location: not available")
+        lines.append("Location: no recent accurate device fix available; please confirm the driver’s location directly.")
     lines.append(
         f"There was no response to the {int(countdown_seconds)} second check. "
         "Please try to call them now."
@@ -519,7 +519,7 @@ class EmergencyManager:
         location = None
         if self._locations is not None:
             try:
-                location = self._locations.current()
+                location = self._locations.current_precise()
             except Exception:
                 location = None
 
