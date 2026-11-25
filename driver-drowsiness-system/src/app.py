@@ -881,7 +881,7 @@ def render_emergency_tab(request_fresh_location: bool = False) -> None:
                 if current_loc.source == SOURCE_MANUAL:
                     source_badge = "Manual Override"
                 elif current_loc.source == SOURCE_BROWSER:
-                    source_badge = "Browser GPS"
+                    source_badge = "Browser device location (GPS or Wi-Fi)"
                     if time.time() - current_loc.timestamp > BROWSER_MAX_AGE_SEC:
                         source_badge = "Browser GPS (stale fallback)"
                 elif current_loc.source == SOURCE_IP:
@@ -894,13 +894,14 @@ def render_emergency_tab(request_fresh_location: bool = False) -> None:
                     st.markdown(f"**Accuracy:** `{current_loc.accuracy_m:.0f} m`")
                 st.markdown(f"**Description:** {describe(current_loc)}")
                 st.link_button("📍 Open in Google Maps", map_link(current_loc), use_container_width=True)
+                st.caption("Verify this pin before monitoring. Browser location can be inaccurate on laptops even when reported accuracy is good.")
                 if st.session_state.get("location_request_pending") is not None:
                     st.info("Refreshing your browser location...")
             else:
                 if st.session_state.get("location_request_pending") is not None:
                     st.info("Requesting your current browser location...")
                 elif not geo_error:
-                    st.info("No recent device fix within 100 m accuracy. Press refresh to try again.")
+                    st.info("No recent accurate device fix. Press refresh to try again.")
 
             if st.button("🔄 Refresh Current Location", use_container_width=True):
                 _start_browser_location_request()
@@ -980,6 +981,12 @@ def render_emergency_tab(request_fresh_location: bool = False) -> None:
                             f"Driver: {emergency_mgr.driver_name}\n"
                             f"Status: System test message. Please ignore."
                         )
+                        test_location = loc_provider.current_precise()
+                        if test_location is not None:
+                            test_text += f"\nLocation: {describe(test_location)}\n{map_link(test_location)}"
+                        else:
+                            test_text += "\nLocation: no recent accurate device fix available."
+                        st.caption(test_text)
                         success_count = 0
                         for c in contacts_book.contacts:
                             if emergency_mgr.dry_run:
