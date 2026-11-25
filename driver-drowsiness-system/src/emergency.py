@@ -396,9 +396,16 @@ class EmergencyManager:
                 if critical:
                     if self._critical_since is None:
                         self._critical_since = now
+                    self._recovered_since = None
+                elif awake:
+                    if self._recovered_since is None:
+                        self._recovered_since = now
+                    elif now - self._recovered_since >= RECOVERY_SECONDS:
+                        self._critical_since = None
+                        self._repeat_eligible = False
                 else:
-                    self._critical_since = None
-                    self._repeat_eligible = False
+                    # Missing face is not evidence of recovery.
+                    self._recovered_since = None
 
             # A finished background send moves us into the cooldown
             if self.phase == PHASE_SENDING and self._send_done:
@@ -412,8 +419,8 @@ class EmergencyManager:
                 event = self._update_countdown(critical, awake, now) or event
             elif self.phase == PHASE_COOLDOWN:
                 if now >= self._cooldown_until:
-                    if critical and self._repeat_eligible and ready:
-                        self._start_send(now, critical=True)
+                    if self._repeat_eligible and ready and not awake:
+                        self._start_send(now, critical=critical)
                         event = EVENT_ALERT_SENDING
                     else:
                         self.phase = PHASE_IDLE
@@ -449,7 +456,7 @@ class EmergencyManager:
             self._recovered_since = None
 
         if now - self._countdown_started >= self.countdown_seconds:
-            self._start_send(now, critical)
+            self._start_send(now, critical or not awake)
             return EVENT_ALERT_SENDING
         return ""
 
@@ -481,7 +488,8 @@ class EmergencyManager:
     # -----------------------------------------------------------------------
     def _start_send(self, now: float, critical: bool) -> None:
         self.phase = PHASE_SENDING
-        self._repeat_eligible = critical
+        self._repeat_eligible = critical or self._repeat_eligible
+        self._recovered_since = None
         self._send_started = now
         self._send_done = False
 
