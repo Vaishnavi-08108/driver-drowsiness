@@ -903,6 +903,22 @@ def render_emergency_tab(request_fresh_location: bool = False) -> None:
                 elif not geo_error:
                     st.info("No recent accurate device fix. Press refresh to try again.")
 
+            with st.expander("Pair your driver phone"):
+                st.caption("Share your location directly with the bot, then discover and select your own account.")
+                if st.button("Discover driver phone"):
+                    chats, error = TelegramClient().location_chats()
+                    st.session_state["driver_phone_choices"] = chats
+                    if error:
+                        st.warning(error)
+                    elif not chats:
+                        st.warning("No private location messages found.")
+                choices = st.session_state.get("driver_phone_choices", [])
+                if choices:
+                    selected = st.selectbox("Select your own account", choices,
+                        format_func=lambda chat: f"{chat.name} (…{chat.chat_id[-4:]})")
+                    if st.button("Confirm driver phone"):
+                        os.environ["DRIVER_LOCATION_CHAT_ID"] = selected.chat_id
+                        st.success("Driver phone paired for this running application.")
             if st.button("Check Phone Live Location", use_container_width=True):
                 phone_client = TelegramClient()
                 phone_fix = phone_client.phone_location()
