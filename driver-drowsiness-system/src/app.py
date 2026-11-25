@@ -361,7 +361,8 @@ BROWSER_GEOLOCATION_EXPRESSION = """new Promise((resolve) => {
                 finish({
                     latitude: position.coords.latitude,
                     longitude: position.coords.longitude,
-                    accuracy: position.coords.accuracy
+                    accuracy: position.coords.accuracy,
+                    timestamp: position.timestamp
                 });
             },
             (error) => {
@@ -822,6 +823,7 @@ def render_emergency_tab(request_fresh_location: bool = False) -> None:
             if "error" in browser_location:
                 error = browser_location["error"]
                 error_code = error.get("code") if isinstance(error, dict) else None
+                loc_provider.update_from_browser(browser_location)
                 st.session_state["geo_error"] = {
                     1: "denied",
                     3: "timeout",
@@ -839,8 +841,7 @@ def render_emergency_tab(request_fresh_location: bool = False) -> None:
 
     geo_error = st.session_state.get("geo_error")
     current_loc = loc_provider.current_precise()
-    if current_loc is None and geo_error:
-        current_loc = loc_provider.current()
+
 
     # Configuration Banner inside a bordered card
     with st.container(border=True):
@@ -871,9 +872,9 @@ def render_emergency_tab(request_fresh_location: bool = False) -> None:
             elif geo_error == "timeout":
                 st.warning("Browser location timed out. Check location services, then refresh.")
             elif geo_error == "unavailable":
-                st.warning("Browser location is unavailable. Showing an approximate fallback if available.")
+                st.warning("Browser location is unavailable. No precise location will be sent.")
             elif geo_error == "invalid":
-                st.warning("Browser returned invalid coordinates. Showing an approximate fallback if available.")
+                st.warning("Browser returned invalid coordinates. No precise location will be sent.")
 
             if current_loc is not None:
                 if current_loc.source == SOURCE_MANUAL:
@@ -898,14 +899,14 @@ def render_emergency_tab(request_fresh_location: bool = False) -> None:
                 if st.session_state.get("location_request_pending") is not None:
                     st.info("Requesting your current browser location...")
                 elif not geo_error:
-                    st.info("Location is unavailable. Press refresh to try again.")
+                    st.info("No recent device fix within 100 m accuracy. Press refresh to try again.")
 
             if st.button("🔄 Refresh Current Location", use_container_width=True):
                 _start_browser_location_request()
                 st.rerun()
 
             with st.expander("Manual Coordinate Override", expanded=False):
-                st.caption("Override coordinates if operating offline or testing specific routes.")
+                st.caption("Manual coordinates are for testing only and are not used in emergency alerts.")
                 default_lat = float(current_loc.lat) if current_loc else 0.0
                 default_lon = float(current_loc.lon) if current_loc else 0.0
                 man_lat = st.number_input("Latitude", value=default_lat, format="%.5f")
