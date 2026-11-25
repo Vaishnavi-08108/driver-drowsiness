@@ -853,6 +853,7 @@ def render_emergency_tab(request_fresh_location: bool = False) -> None:
             st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
             dry_run = st.checkbox("Dry Run Mode (Simulate Alerts)", value=emergency_mgr.dry_run)
             emergency_mgr.dry_run = dry_run
+            st.session_state.emergency_dry_run = dry_run
         with c3:
             st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
             token_set = bool(os.environ.get(config.TELEGRAM_TOKEN_ENV))
