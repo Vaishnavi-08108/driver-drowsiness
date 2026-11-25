@@ -113,6 +113,21 @@ class TelegramClient:
         ok, _, error = self._call("sendMessage", body, "application/json")
         return SendResult(ok, error)
 
+    def location_chats(self) -> Tuple[List[ChatInfo], str]:
+        body = json.dumps({"limit": 100, "timeout": 0,
+                           "allowed_updates": ["message", "edited_message"]}).encode("utf-8")
+        ok, updates, error = self._call("getUpdates", body, "application/json")
+        if not ok:
+            return [], error
+        chats = {}
+        for update in updates or []:
+            msg = update.get("edited_message") or update.get("message") or {}
+            chat = msg.get("chat", {})
+            if chat.get("type") == "private" and "id" in chat and isinstance(msg.get("location"), dict):
+                cid = str(chat["id"])
+                chats[cid] = ChatInfo(cid, str(chat.get("first_name", "Driver")), "private")
+        return list(chats.values()), ""
+
     def phone_location(self) -> Optional[Location]:
         """Read recent live-location updates from the explicitly paired driver chat."""
         driver_chat = os.environ.get("DRIVER_LOCATION_CHAT_ID", "").strip()
