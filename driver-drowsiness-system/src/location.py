@@ -23,7 +23,8 @@ SOURCE_BROWSER = "browser"
 SOURCE_IP = "ip"
 SOURCE_MANUAL = "manual"
 
-BROWSER_MAX_AGE_SEC = 300.0
+BROWSER_MAX_AGE_SEC = 30.0
+BROWSER_MAX_ACCURACY_M = 100.0
 IP_CACHE_SEC = 1800.0
 IP_RETRY_SEC = 60.0
 
@@ -77,7 +78,7 @@ def make_location(
     if accuracy_m is not None:
         try:
             val = float(accuracy_m)
-            if val > 0 and not math.isnan(val):
+            if val > 0 and math.isfinite(val):
                 acc = val
         except (ValueError, TypeError):
             acc = None
@@ -133,7 +134,14 @@ def parse_browser_location(payload: Any, now: Optional[float] = None) -> Optiona
     if not valid_coordinates(lat, lon):
         return None
 
-    return make_location(lat, lon, SOURCE_BROWSER, accuracy_m=acc, now=now)
+    received = time.time() if now is None else float(now)
+    try:
+        captured = float(payload.get("timestamp", received * 1000)) / 1000
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(captured) or not 0 <= received - captured <= BROWSER_MAX_AGE_SEC:
+        return None
+    return make_location(lat, lon, SOURCE_BROWSER, accuracy_m=acc, now=captured)
 
 
 def fetch_ip_location(
@@ -183,6 +191,7 @@ class LocationProvider:
         if loc is not None:
             self._browser = loc
             return True
+        self._browser = None
         return False
 
     def set_manual(self, lat: Any, lon: Any, now: Optional[float] = None) -> bool:
@@ -197,13 +206,13 @@ class LocationProvider:
         self._manual = None
 
     def current_precise(self, now: Optional[float] = None) -> Optional[Location]:
-        """Resolve only manual or fresh browser GPS coordinates."""
+        """Resolve only recent, sufficiently accurate device coordinates for alerts."""
         t = time.time() if now is None else float(now)
 
-        if self._manual is not None:
-            return self._manual
-
-        if self._browser is not None and (t - self._browser.timestamp <= BROWSER_MAX_AGE_SEC):
+        if (self._browser is not None
+                and 0 <= t - self._browser.timestamp <= BROWSER_MAX_AGE_SEC
+                and self._browser.accuracy_m is not None
+                and self._browser.accuracy_m <= BROWSER_MAX_ACCURACY_M):
             return self._browser
 
         return None
