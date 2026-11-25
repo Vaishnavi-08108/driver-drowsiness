@@ -99,6 +99,7 @@ class TelegramClient:
         self._opener = opener
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
+        self.location_status = "Phone location not checked yet."
 
     @property
     def configured(self) -> bool:
@@ -116,11 +117,13 @@ class TelegramClient:
         """Read recent live-location updates from the explicitly paired driver chat."""
         driver_chat = os.environ.get("DRIVER_LOCATION_CHAT_ID", "").strip()
         if not driver_chat:
+            self.location_status = "DRIVER_LOCATION_CHAT_ID is not configured."
             return None
         body = json.dumps({"limit": 100, "timeout": 0,
                            "allowed_updates": ["message", "edited_message"]}).encode("utf-8")
-        ok, updates, _ = self._call("getUpdates", body, "application/json")
+        ok, updates, error = self._call("getUpdates", body, "application/json")
         if not ok or not isinstance(updates, list):
+            self.location_status = error or "Invalid Telegram updates response."
             return None
         latest = None
         for update in updates:
@@ -135,18 +138,26 @@ class TelegramClient:
             if latest is None or stamp >= latest[0]:
                 latest = (stamp, loc, msg)
         if latest is None:
+            self.location_status = "No location update from the paired private chat."
             return None
         stamp, loc, msg = latest
         now = time.time()
         period = loc.get("live_period", 0)
-        if not period or now >= msg.get("date", 0) + period or not 0 <= now - stamp <= 60:
+        if not period or now >= msg.get("date", 0) + period:
+            self.location_status = "Live location is missing or expired. Share live location again."
+            return None
+        if not 0 <= now - stamp <= 60:
+            self.location_status = f"Last phone update is {now - stamp:.0f} seconds old; waiting for a fresh update."
             return None
         lat, lon = loc.get("latitude"), loc.get("longitude")
         if not valid_coordinates(lat, lon):
+            self.location_status = "Phone returned invalid coordinates."
             return None
         fix = make_location(lat, lon, "phone_telegram", accuracy_m=loc.get("horizontal_accuracy"), now=stamp)
         if fix.accuracy_m is not None and fix.accuracy_m > 50:
+            self.location_status = f"Phone uncertainty is {fix.accuracy_m:.0f} m; exceeds 50 m."
             return None
+        self.location_status = "Recent phone location received."
         return fix
 
     def send_location(self, chat_id: str, location: Location) -> SendResult:
