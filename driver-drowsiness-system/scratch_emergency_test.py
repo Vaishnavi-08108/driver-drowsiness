@@ -52,7 +52,7 @@ class FakeClient:
 
 
 class FakeLocations:
-    def current(self):
+    def current_precise(self):
         return PLACE
 
 
@@ -348,5 +348,16 @@ with tempfile.TemporaryDirectory() as tmp:
     assert s.phase == PHASE_COUNTDOWN and len(client.messages) == 1
     s = m.update(CRIT, True, now=110.5)
     assert s.phase == PHASE_SENDING and len(client.messages) == 2
+
+# Brief tracking loss must not suppress a repeat alert.
+with tempfile.TemporaryDirectory() as tmp:
+    client = FakeClient()
+    m = make_manager(tmp, client=client, n_contacts=1, cooldown_seconds=60)
+    feed(m, CRIT, 0, 25)
+    m.update(CRIT, True, now=25.5)
+    m.update(ALERT, False, now=40)
+    m.update(CRIT, True, now=41)
+    m.update(CRIT, True, now=85)
+    assert len(client.messages) == 2
 
 print("All emergency tests passed")
