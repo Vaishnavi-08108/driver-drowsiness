@@ -44,7 +44,7 @@ from typing import Any, Callable, List, Optional, Tuple
 
 from src import config
 from src.contacts import mask_chat_id
-from src.location import Location, describe, map_link
+from src.location import Location, describe, map_link, valid_coordinates, make_location
 
 PHASE_IDLE = "IDLE"
 PHASE_COUNTDOWN = "COUNTDOWN"
@@ -110,6 +110,49 @@ class TelegramClient:
     def send_message(self, chat_id: str, text: str) -> SendResult:
         body = json.dumps({"chat_id": int(chat_id), "text": text[:4096]}).encode("utf-8")
         ok, _, error = self._call("sendMessage", body, "application/json")
+        return SendResult(ok, error)
+
+    def phone_location(self) -> Optional[Location]:
+        """Read recent live-location updates from the explicitly paired driver chat."""
+        driver_chat = os.environ.get("DRIVER_LOCATION_CHAT_ID", "").strip()
+        if not driver_chat:
+            return None
+        body = json.dumps({"limit": 100, "timeout": 0,
+                           "allowed_updates": ["message", "edited_message"]}).encode("utf-8")
+        ok, updates, _ = self._call("getUpdates", body, "application/json")
+        if not ok or not isinstance(updates, list):
+            return None
+        latest = None
+        for update in updates:
+            msg = update.get("edited_message") or update.get("message") or {}
+            chat = msg.get("chat", {})
+            if chat.get("type") != "private" or str(chat.get("id")) != driver_chat:
+                continue
+            loc = msg.get("location")
+            if not isinstance(loc, dict):
+                continue
+            stamp = msg.get("edit_date", msg.get("date", 0))
+            if latest is None or stamp >= latest[0]:
+                latest = (stamp, loc, msg)
+        if latest is None:
+            return None
+        stamp, loc, msg = latest
+        now = time.time()
+        period = loc.get("live_period", 0)
+        if not period or now >= msg.get("date", 0) + period or not 0 <= now - stamp <= 60:
+            return None
+        lat, lon = loc.get("latitude"), loc.get("longitude")
+        if not valid_coordinates(lat, lon):
+            return None
+        fix = make_location(lat, lon, "phone_telegram", accuracy_m=loc.get("horizontal_accuracy"), now=stamp)
+        if fix.accuracy_m is not None and fix.accuracy_m > 50:
+            return None
+        return fix
+
+    def send_location(self, chat_id: str, location: Location) -> SendResult:
+        body = json.dumps({"chat_id": int(chat_id), "latitude": location.lat,
+                           "longitude": location.lon}).encode("utf-8")
+        ok, _, error = self._call("sendLocation", body, "application/json")
         return SendResult(ok, error)
 
     def send_photo(self, chat_id: str, jpeg: bytes, caption: str = "") -> SendResult:
@@ -234,6 +277,8 @@ def build_alert_text(
     ]
     if location is not None:
         lines.append(f"Location: {describe(location)}")
+        if location.source == "phone_telegram":
+            lines.append("Source: driver phone live location; accuracy not reported." if location.accuracy_m is None else "Source: driver phone live location.")
         lines.append(map_link(location))
     else:
         lines.append("Location: no recent accurate device fix available; please confirm the driver’s location directly.")
@@ -525,11 +570,10 @@ class EmergencyManager:
 
     def _deliver(self, jpeg: Optional[bytes], wall_time: float) -> AlertReport:
         location = None
-        if self._locations is not None:
-            try:
-                location = self._locations.current_precise()
-            except Exception:
-                location = None
+        try:
+            location = self._client.phone_location()
+        except Exception:
+            location = None
 
         text = build_alert_text(self.driver_name, wall_time, location, self.countdown_seconds)
         results = []
@@ -541,6 +585,10 @@ class EmergencyManager:
 
             message = self._with_retry(lambda c=contact: self._client.send_message(c.chat_id, text))
             photo_ok, error = False, message.error
+            if location is not None:
+                pin = self._client.send_location(contact.chat_id, location)
+                if not pin.ok and not error:
+                    error = f"Location pin failed: {pin.error}"
             if jpeg is not None:
                 photo = self._client.send_photo(contact.chat_id, jpeg, PHOTO_CAPTION)
                 photo_ok = photo.ok
