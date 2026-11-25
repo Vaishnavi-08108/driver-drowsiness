@@ -903,6 +903,16 @@ def render_emergency_tab(request_fresh_location: bool = False) -> None:
                 elif not geo_error:
                     st.info("No recent accurate device fix. Press refresh to try again.")
 
+            if st.button("Check Phone Live Location", use_container_width=True):
+                phone_client = TelegramClient()
+                phone_fix = phone_client.phone_location()
+                if phone_fix is None:
+                    st.warning(phone_client.location_status)
+                else:
+                    st.success(phone_client.location_status)
+                    st.write(describe(phone_fix))
+                    st.link_button("Verify phone pin", map_link(phone_fix))
+
             if st.button("🔄 Refresh Current Location", use_container_width=True):
                 _start_browser_location_request()
                 st.rerun()
