@@ -22,7 +22,6 @@ import time
 from collections import deque
 from pathlib import Path
 from dotenv import load_dotenv
-from pathlib import Path
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -38,7 +37,7 @@ import streamlit as st
 from streamlit_js_eval import streamlit_js_eval
 
 from src import config
-from src.alerts import SoundAlert
+from src.alerts import SoundAlert, generate_beep_wav
 from src.analytics import AnalyticsResult, DrowsinessAnalytics
 from src.calibration import CalibrationResult, Calibrator
 from src.chatbot import FatigueChatBot, SUGGESTED_PROMPTS
@@ -70,6 +69,13 @@ from src.sleep_advisor import SleepAdvisor, SleepLogBook, ReadinessScorer
 
 UI_UPDATE_EVERY = 3
 NO_FACE_COLOR = "#64748b"
+BRAND = """<div class="driveguard-brand">
+<svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+     stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+  <circle cx="16" cy="16" r="12"/><circle cx="16" cy="16" r="3"/>
+  <path d="M5 13l8 2m6 0 8-2M16 19v9"/>
+</svg><span>DriveGuard</span></div>"""
+PAGES = ("Monitoring", "Emergency", "Sleep Assistant", "Travel Readiness")
 CALIBRATION_COLOR = "#2563eb"
 
 STATE_LABELS = {
@@ -92,19 +98,20 @@ def inject_css() -> None:
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
 
         :root {
-            --clinical-bg: #F4F7F6;
+            color-scheme: light;
+            --clinical-bg: #FAFBF9;
             --clinical-surface: #FFFFFF;
             --clinical-text: #18312E;
             --clinical-muted: #718783;
             --clinical-border: #DDE7E4;
-            --clinical-primary: #3A7D78;
+            --clinical-primary: #17583F;
             --clinical-primary-soft: #E8F3F1;
             --clinical-mint: #66AFA3;
             --clinical-amber: #C58A32;
             --clinical-red: #C65A5A;
         }
 
-        html, body, .stApp, [class*="css"] {
+        html, body, .stApp {
             background-color: var(--clinical-bg) !important;
             color: var(--clinical-text) !important;
             font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
@@ -305,43 +312,19 @@ def inject_css() -> None:
             border-radius: 10px !important;
         }
 
-        /* SafeDrive cockpit visual system */
-        :root {
-            --clinical-bg: #F3F6FA;
-            --clinical-surface: #FFFFFF;
-            --clinical-text: #14243A;
-            --clinical-muted: #53677D;
-            --clinical-border: #DCE5EF;
-            --clinical-primary: #087E82;
-            --clinical-primary-soft: #E1F4F3;
+        .driveguard-brand {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            color: var(--clinical-primary);
+            font-size: 1.3rem;
+            font-weight: 800;
+            white-space: nowrap;
         }
-        html, body, .stApp { background: var(--clinical-bg) !important; }
-        [data-testid="stHeader"] { background: rgba(243,246,250,.94); }
-        .block-container { max-width: 1480px; padding: 2.5rem 2.5rem 4rem !important; }
-        h1, .page-header { font-size: clamp(1.9rem, 3vw, 2.8rem) !important; letter-spacing: -.045em !important; }
-        [data-testid="stSidebar"] { background: #101F33 !important; border: none; }
-        [data-testid="stSidebar"] > div:first-child { width: auto; padding: 1.5rem 1rem; }
-        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
-        [data-testid="stSidebar"] label,
-        [data-testid="stSidebar"] label p,
-        [data-testid="stSidebar"] h2,
-        [data-testid="stSidebar"] h3 { color: #DCE7F5 !important; }
-        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label { border-radius: 9px; }
-        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:hover { background: #203650; }
-        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:has(input:checked) { background: #193E50 !important; border-color: #397B87 !important; }
-        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:has(input:checked) p { color: #B9F5EB !important; }
-        [data-testid="stSidebar"] hr { border-color: #33465D; }
-        .card { border-radius: 18px; padding: 22px; min-height: 142px; border-top: 3px solid var(--accent, #087E82); box-shadow: 0 4px 16px rgba(20,36,58,.055); }
-        .card .value { font-variant-numeric: tabular-nums; }
-        .card .sub { line-height: 1.5; }
-        .badge { border-radius: 10px; padding: 16px; }
-        .countdown-banner { border: 2px solid #C83C42; background: #FFF1F2; color: #8D2028; font-size: 1.15rem; }
-        [data-testid="stVerticalBlockBorderWrapper"], [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlockBorderWrapper"] { border-radius: 18px; }
-        [data-testid="stButton"] button, [data-testid="stLinkButton"] a { min-height: 44px; border-radius: 9px !important; white-space: normal; }
-        [data-testid="stButton"] button:focus-visible, [data-testid="stLinkButton"] a:focus-visible { outline: 3px solid #18A7A0; outline-offset: 3px; }
-        [data-testid="stImage"] img { border-radius: 14px; }
-        [data-testid="stExpander"] { border-radius: 12px; }
-        [data-testid="stSidebar"] [data-testid="stButton"] button[kind="primary"] { background: #087E82 !important; color: white !important; }
+        .driveguard-brand span { color: var(--clinical-text); }
+        .card { border-radius: 10px; box-shadow: none; }
+        [data-testid="stImage"] img { border-radius: 8px; }
+        [data-testid="stHeader"] { background: var(--clinical-bg); }
         @media (max-width: 900px) {
             .block-container { padding: 1.5rem 1rem 3rem !important; }
         }
@@ -362,7 +345,10 @@ def inject_css() -> None:
 
 
 def badge_html(label: str, color: str) -> str:
-    return f'<div class="badge" style="background:{color};">{label}</div>'
+    return (
+        f'<div class="badge" style="background:{color}20;color:#18312e;'
+        f'border:1px solid {color};border-left:5px solid {color};">{label}</div>'
+    )
 
 
 def card_html(label: str, value: str, sub: str, accent: str) -> str:
@@ -738,58 +724,9 @@ def render_sleep_advisor_tab() -> None:
     )
     advisor: SleepAdvisor = st.session_state.sleep_advisor
 
-    # Evaluate current readiness
-    readiness = advisor.check_readiness()
-
-    # 4 Top Metric Cards evenly across the top
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.markdown(
-            f'<div class="card" style="--accent:{readiness.color};">'
-            f'<div class="label">Readiness Score</div>'
-            f'<div class="value" style="color:{readiness.color};">{readiness.score}/100</div>'
-            f'<div class="sub">Verdict: <b>{readiness.verdict}</b></div></div>',
-            unsafe_allow_html=True,
-        )
-    with col2:
-        last_night = f"{readiness.last_night_hours:.1f}h" if readiness.last_night_hours is not None else "--"
-        st.markdown(
-            card_html("Last Night's Sleep", last_night, f"Target: {config.SLEEP_TARGET_HOURS:.1f}h", "#2563EB"),
-            unsafe_allow_html=True,
-        )
-    with col3:
-        st.markdown(
-            card_html("Cumulative Debt", f"{readiness.sleep_debt_hours:.1f}h", f"Past {config.SLEEP_DEBT_DAYS} days", "#F59E0B"),
-            unsafe_allow_html=True,
-        )
-    with col4:
-        st.markdown(
-            card_html("Hours Awake", f"{readiness.hours_awake:.1f}h", f"Limit: {config.AWAKE_FREE_HOURS:.0f}h free", "#8B5CF6"),
-            unsafe_allow_html=True,
-        )
-
-    # Score Deductions & Action Plan side-by-side in two equal bordered cards
-    col_deductions, col_plan = st.columns(2)
-    with col_deductions:
-        with st.container(border=True):
-            st.markdown('<h3 class="section-header">⚠️ Score Deductions & Risk Factors</h3>', unsafe_allow_html=True)
-            if readiness.penalties:
-                for p in readiness.penalties:
-                    st.error(f"**-{p.points_lost} pts** [{p.category}] — {p.description}")
-            else:
-                st.success("No penalties deducted. Sleep duration and circadian timing are optimal!")
-
-    with col_plan:
-        with st.container(border=True):
-            st.markdown('<h3 class="section-header">💡 Personalized Action Plan</h3>', unsafe_allow_html=True)
-            if readiness.advice:
-                for tip in readiness.advice:
-                    st.info(f"{tip}")
-            else:
-                st.success("You are in optimal shape to drive. Remember to take a break every 2 hours.")
-
+    form_col, results_col = st.columns([1, 1.3])
     # Compact Sleep Logging Form inside its own card
-    with st.container(border=True):
+    with form_col, st.container(border=True):
         st.markdown('<h3 class="section-header">📝 Log Sleep Period</h3>', unsafe_allow_html=True)
         with st.form("sleep_log_form", clear_on_submit=True):
             fcol1, fcol2, fcol3 = st.columns(3)
@@ -814,10 +751,26 @@ def render_sleep_advisor_tab() -> None:
                 except Exception as exc:
                     st.error(f"Error saving entry: {exc}")
 
+    readiness = advisor.check_readiness()
+    with results_col, st.container(border=True):
+        st.subheader("Readiness estimate")
+        st.metric("Readiness score", f"{readiness.score}/100")
+        st.progress(min(100, max(0, readiness.score)))
+        st.caption("This estimate can’t determine whether it’s safe to drive.")
+        if readiness.last_night_hours is not None:
+            st.write(f"Most recent sleep: {readiness.last_night_hours:.1f} hours")
+        with st.expander("Score details and guidance"):
+            st.write(f"Sleep debt: {readiness.sleep_debt_hours:.1f} hours")
+            st.write(f"Time awake: {readiness.hours_awake:.1f} hours")
+            for penalty in readiness.penalties:
+                st.write(f"-{penalty.points_lost} points · {penalty.description}")
+            for tip in readiness.advice:
+                st.info(tip)
+
     # Past Sleep History Table inside its own card
     entries = advisor.log_book.entries
-    with st.container(border=True):
-        st.markdown('<h3 class="section-header">📋 Past Sleep Records</h3>', unsafe_allow_html=True)
+    with results_col, st.container(border=True):
+        st.markdown('<h3 class="section-header">Recent sleep</h3>', unsafe_allow_html=True)
         if entries:
             records = [
                 {
@@ -848,7 +801,7 @@ def render_sleep_advisor_tab() -> None:
 def render_emergency_tab(request_fresh_location: bool = False) -> None:
     st.markdown(
         '<p style="color:#718783;font-size:.72rem;font-weight:700;letter-spacing:.12em;margin-bottom:.35rem;">ESCALATION</p>'
-        '<h1 class="page-header">Emergency Support</h1>',
+        '<h1 class="page-header">Emergency</h1>',
         unsafe_allow_html=True,
     )
     contacts_book: ContactBook = st.session_state.contacts_book
@@ -907,8 +860,9 @@ def render_emergency_tab(request_fresh_location: bool = False) -> None:
             else:
                 st.warning("Telegram Bot Token: Not Set (Dry run)")
 
-    # 2-column split ([1, 1]): Left = Geolocation, Right = Contacts & Escalation
-    col_geo, col_contacts = st.columns([1, 1])
+    # Show location above contact management.
+    col_geo = st.container()
+    col_contacts = st.container()
 
     with col_geo:
         with st.container(border=True):
@@ -933,6 +887,12 @@ def render_emergency_tab(request_fresh_location: bool = False) -> None:
                     source_badge = "IP Approximate"
                 else:
                     source_badge = current_loc.source
+                st.map(
+                    pd.DataFrame({"lat": [current_loc.lat], "lon": [current_loc.lon]}),
+                    zoom=14,
+                )
+                updated_at = dt.datetime.fromtimestamp(current_loc.timestamp).strftime("%H:%M:%S")
+                st.caption(f"Location updated at {updated_at}")
                 st.markdown(f"**Coordinates:** `{current_loc.lat:.5f}, {current_loc.lon:.5f}`")
                 st.markdown(f"**Source:** `{source_badge}`")
                 if current_loc.accuracy_m is not None:
@@ -1085,291 +1045,187 @@ def _start_browser_location_request() -> None:
 # Tab 4: Driver Fatigue Assistant Chatbot
 # ---------------------------------------------------------------------------
 def render_chatbot_tab() -> None:
-    # Centered container (max-width: 900px)
-    _, center_col, _ = st.columns([1, 8, 1])
-    with center_col:
-        with st.container(border=True):
-            st.markdown(
-                '<p style="color:#718783;font-size:.72rem;font-weight:700;letter-spacing:.12em;margin-bottom:.35rem;">SLEEP SCIENCE</p>'
-                '<h1 class="page-header">Fatigue Assistant</h1>',
-                unsafe_allow_html=True,
-            )
-            bot: FatigueChatBot = st.session_state.chatbot
-
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                mode_label = "Online (Claude Messages API)" if bot.is_online else "Offline (Rule-Based Sleep Science Expert)"
-                mode_color = "#10B981" if bot.is_online else "#F59E0B"
-                st.markdown(f"**Mode:** <span style='color:{mode_color}; font-weight:700;'>{mode_label}</span>", unsafe_allow_html=True)
-            with col2:
-                if st.button("Clear Chat", use_container_width=True):
-                    bot.clear_history()
-                    st.rerun()
-
-            # Preset suggestions
-            st.markdown("<p style='font-size: 12.5px; font-weight: 600; color: #64748B; margin-top: 10px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;'>SUGGESTED QUESTIONS</p>", unsafe_allow_html=True)
-            preset_cols = st.columns(3)
-            for idx, prompt in enumerate(SUGGESTED_PROMPTS[:6]):
-                col = preset_cols[idx % 3]
-                if col.button(prompt, key=f"preset_{idx}", use_container_width=True):
-                    bot.chat(prompt)
-                    st.rerun()
-
-            st.divider()
-
-            # Render Chat History
-            for message in bot.history:
-                with st.chat_message(message["role"]):
-                    st.markdown(message["content"])
-
-            # User input
-            user_query = st.chat_input("Ask a question about driving fatigue, naps, caffeine, or safety...")
-            if user_query:
-                with st.chat_message("user"):
-                    st.markdown(user_query)
-                with st.spinner("Consulting sleep science advisor..."):
-                    reply = bot.chat(user_query)
-                with st.chat_message("assistant"):
-                    st.markdown(reply)
+    st.title("Sleep assistant")
+    st.caption("Ask about sleep, fatigue, and driving.")
+    bot: FatigueChatBot = st.session_state.chatbot
+    suggestions, conversation = st.columns([1, 2])
+    with suggestions, st.container(border=True):
+        st.subheader("Suggested questions")
+        for idx, prompt in enumerate(SUGGESTED_PROMPTS[:6]):
+            if st.button(prompt, key=f"preset_{idx}", use_container_width=True):
+                bot.chat(prompt)
                 st.rerun()
+
+    with conversation, st.container(border=True):
+        st.caption("Online assistant" if bot.is_online else "Offline sleep guidance")
+        if st.button("Clear chat"):
+            bot.clear_history()
+            st.rerun()
+        for message in bot.history:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+        user_query = st.chat_input("Ask a question about sleep or driving fatigue")
+        if user_query:
+            with st.spinner("Preparing a reply…"):
+                bot.chat(user_query)
+            st.rerun()
 
 
 # ---------------------------------------------------------------------------
 # Main Page Router
 # ---------------------------------------------------------------------------
-def main() -> None:
-    st.set_page_config(
-        page_title="Driver Drowsiness & Fatigue System",
-        page_icon="🚗",
-        layout="wide",
-        initial_sidebar_state="expanded",
-    )
-    inject_css()
-    st.markdown('<style>.stApp{background:#f2f3f5!important}[data-testid="stSidebar"]{background:white!important;border-right:1px solid #e5e7eb!important}[data-testid="stSidebar"] p,[data-testid="stSidebar"] label,[data-testid="stSidebar"] h3{color:#242830!important}[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked){background:#e8f4ed!important;border-color:#cde8d7!important}.card{background:white!important;border:1px solid #e8e9ec!important;border-radius:16px!important;box-shadow:none!important}[data-testid="stButton"] button[kind="primary"]{background:#176b49!important;color:white!important}</style>', unsafe_allow_html=True)
-    init_session_state()
+def select_page(page: str) -> None:
+    st.session_state.workspace_page = page
 
-    # -----------------------------------------------------------------------
-    # Left Navigation & Sidebar Controls
-    # -----------------------------------------------------------------------
-    with st.sidebar:
+
+def render_navigation(selected: str) -> None:
+    top_navigation = selected in ("Emergency", "Sleep Assistant")
+    if top_navigation:
         st.markdown(
-            """
-            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
-                <div style="width:42px;height:42px;border-radius:14px;background:#1D5262;color:#B9F5EB;display:flex;align-items:center;justify-content:center;font-size:1.15rem;font-weight:700;">SD</div>
-                <div>
-                    <div style="font-size: 1.15rem; font-weight: 700; color: #171a20; line-height: 1.1;">SafeDrive AI</div>
-                    <div style="font-size: 0.72rem; color: #64748b; font-weight: 600;">DRIVER SAFETY SYSTEM</div>
-                </div>
-            </div>
-            """,
+            '<style>[data-testid="stSidebar"], '
+            '[data-testid="stSidebarCollapsedControl"] {display:none}</style>',
             unsafe_allow_html=True,
         )
-
-        # Quick Travel Readiness Status Pill in left sidebar
-        try:
-            r = st.session_state.sleep_advisor.check_readiness()
-            st.markdown(
-                f"""
-                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid {r.color};
-                            border-radius: 10px; padding: 10px 14px; margin: 10px 0 14px 0;
-                            box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
-                    <div style="font-size: 0.7rem; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Travel Readiness</div>
-                    <div style="font-size: 1.15rem; font-weight: 800; color: #0f172a; display: flex; justify-content: space-between; align-items: center; margin-top: 2px;">
-                        <span>{r.score}/100</span>
-                        <span style="font-size: 0.8rem; padding: 2px 8px; border-radius: 10px; background: {r.color}20; color: {r.color}; font-weight: 700;">{r.verdict}</span>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        except Exception:
-            pass
-
-        # "I'm Awake" cancellation button in sidebar
-        if st.button("⚡ I'M AWAKE (Cancel Alert)", type="primary", use_container_width=True):
-            canceled = st.session_state.emergency_mgr.cancel()
-            if canceled:
-                st.success("Emergency countdown cancelled! Driver is alert.")
-            else:
-                st.info("No active emergency countdown.")
-
-        st.markdown("<p style='font-size: 0.75rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin: 16px 0 4px 0; letter-spacing: 0.5px;'>NAVIGATION</p>", unsafe_allow_html=True)
-
-        NAV_OPTIONS = [
-            "Overview",
-            "Live Monitor",
-            "Travel Readiness",
-            "Emergency",
-            "AI Assistant",
-        ]
-        selected_page = st.radio(
-            "Navigation",
-            NAV_OPTIONS,
-            index=0,
-            key="workspace_page",
-            label_visibility="collapsed",
+        brand_col, *links = st.columns([1.35, 1, 1, 1.2, 1.2])
+        brand_col.markdown(BRAND, unsafe_allow_html=True)
+    else:
+        st.sidebar.markdown(BRAND, unsafe_allow_html=True)
+        links = [st.sidebar] * len(PAGES)
+    for container, page in zip(links, PAGES):
+        container.button(
+            page,
+            key=f"nav_{'top' if top_navigation else 'side'}_{page}",
+            type="primary" if page == selected else "secondary",
+            use_container_width=True,
+            on_click=select_page,
+            args=(page,),
         )
 
-        settings = None
-        running = False
-        calibrate_clicked = False
 
-        # Live Monitor settings in sidebar when Live Monitor is selected
-        if selected_page == "Live Monitor":
-            st.divider()
-            st.markdown("<p style='font-size: 0.75rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px;'>MONITOR CONTROLS</p>", unsafe_allow_html=True)
-            running = st.toggle("Start monitoring", value=False)
+def render_monitor_tab() -> None:
+    title, toggle = st.columns([3, 1])
+    title.title("Driver monitoring")
+    running = toggle.toggle("Monitoring", key="monitoring_on")
+    calib_message = st.session_state.pop("calib_message", None)
+    if calib_message:
+        ok, message = calib_message
+        (st.success if ok else st.warning)(message)
 
-            st.subheader("Camera")
-            camera_index = st.number_input("Camera index", min_value=0, max_value=10, value=config.CAMERA_INDEX, step=1)
-            full_mesh = st.checkbox("Draw full face mesh", value=False)
-
-            st.subheader("Detection Thresholds")
-            ear_threshold = st.slider("EAR threshold", min_value=config.EAR_THRESHOLD_MIN, max_value=config.EAR_THRESHOLD_MAX, step=0.01, key="ear_threshold")
-            mar_threshold = st.slider("MAR threshold", min_value=config.MAR_THRESHOLD_MIN, max_value=config.MAR_THRESHOLD_MAX, step=0.01, key="mar_threshold")
-            consec_frames = st.slider("Consecutive frames", min_value=5, max_value=60, step=1, key="consec_frames")
-
-            st.subheader("Calibration")
-            st.caption(f"Look at camera eyes open and mouth closed for {config.CALIBRATION_DURATION_SEC}s.")
-            calibrate_clicked = st.button("Calibrate my thresholds", use_container_width=True)
-            if calibrate_clicked and not running:
-                st.warning("Turn on Start monitoring first.")
-
-            st.subheader("Alerts")
+    alert_ph = st.empty()
+    calib_ph = st.empty()
+    camera, detection = st.columns([1.75, 1])
+    with camera, st.container(border=True):
+        st.subheader("Driver camera")
+        video_ph = st.empty()
+        info_ph = st.empty()
+    with detection, st.container(border=True):
+        st.subheader("Detection settings")
+        ear_threshold = st.slider(
+            "EAR threshold", config.EAR_THRESHOLD_MIN, config.EAR_THRESHOLD_MAX,
+            step=.01, key="ear_threshold",
+        )
+        mar_threshold = st.slider(
+            "MAR threshold", config.MAR_THRESHOLD_MIN, config.MAR_THRESHOLD_MAX,
+            step=.01, key="mar_threshold",
+        )
+        calibrate = st.button("Calibrate thresholds", type="primary", disabled=not running)
+        st.caption(f"While parked, keep your eyes open and mouth closed for {config.CALIBRATION_DURATION_SEC}s.")
+        with st.expander("Camera and alert settings"):
+            camera_index = st.number_input("Camera index", 0, 10, config.CAMERA_INDEX)
+            full_mesh = st.checkbox("Draw full face mesh")
+            consec_frames = st.slider("Consecutive frames", 5, 60, key="consec_frames")
             sound_on = st.checkbox("Sound alert on critical drowsiness", value=True)
-
-            settings = {
-                "camera_index": int(camera_index),
-                "full_mesh": full_mesh,
-                "ear_threshold": ear_threshold,
-                "mar_threshold": mar_threshold,
-                "consec_frames": consec_frames,
-                "sound": sound_on,
-                "calibrate": bool(calibrate_clicked and running),
-            }
-
-    # -----------------------------------------------------------------------
-    # Main Page Router based on Left Sidebar Selection
-    # -----------------------------------------------------------------------
-    if selected_page == "Overview":
-        if st.session_state.logger is not None:
-            close_session()
-        release_camera()
-        release_extractor()
-        import streamlit.components.v1 as components
-        components.html("<style>body{margin:0;font:16px system-ui;color:white}.hero{height:250px;border-radius:20px;background:radial-gradient(at 80% 20%,#365e85,#101d30 70%);display:flex;align-items:center;padding:0 5%;gap:5%}h1{font-size:40px;line-height:1.05;margin:12px 0}small{color:#a9e6ce;letter-spacing:2px}p{color:#cbd5e1}canvas{width:45%;height:230px;cursor:grab;touch-action:none}</style><div class=\"hero\"><div style=\"flex:1\"><small>SAFEDRIVE INTELLIGENCE</small><h1>Stay alert.<br>Arrive safe.</h1><p>Every journey starts with awareness.</p></div><canvas id=\"car\"></canvas></div><script>let c=document.querySelector('canvas'),g=c.getContext('2d'),a=.6,last=0,drag=false;function draw(){let w=c.clientWidth,h=c.clientHeight;c.width=w*2;c.height=h*2;g.scale(2,2);let s=Math.min(w/5,h/3);function p([x,y,z]){let X=x*Math.cos(a)-z*Math.sin(a),Z=x*Math.sin(a)+z*Math.cos(a);return[w/2+X*s,h*.6+(Z*.4-y)*s,Z]}let f=[];function box(x,y,z,l,b,d,col){let v=[[x,y,z],[x+l,y,z],[x+l,y+b,z],[x,y+b,z],[x,y,z+d],[x+l,y,z+d],[x+l,y+b,z+d],[x,y+b,z+d]].map(p);[[0,1,2,3],[4,5,6,7],[0,4,7,3],[1,5,6,2],[3,2,6,7]].forEach((q,i)=>f.push([q.map(j=>v[j]),col[i%col.length]]))}box(-1.8,0,-.75,3.6,.48,1.5,['#8aa9c5','#c9e1ef','#7799b9','#a4c6dd','#f0f8ff']);box(-.85,.48,-.58,1.7,.57,1.16,['#29485f','#527b99','#29485f','#527b99','#c5dbea']);for(let x of [-1.2,1.2])for(let z of [-.86,.62])box(x-.25,-.2,z,.5,.45,.24,['#14202c','#283744']);f.sort((u,v)=>u[0].reduce((s,p)=>s+p[2],0)-v[0].reduce((s,p)=>s+p[2],0));for(let [v,col] of f){g.beginPath();v.forEach((p,i)=>i?g.lineTo(...p.slice(0,2)):g.moveTo(...p.slice(0,2)));g.closePath();g.fillStyle=col;g.fill()}g.fillStyle='#cbd5e1';g.font='12px system-ui';g.textAlign='center';g.fillText('Drag to rotate',w/2,h-10)}c.onpointerdown=e=>{drag=true;last=e.clientX;c.setPointerCapture(e.pointerId)};c.onpointermove=e=>{if(drag){a+=(e.clientX-last)*.015;last=e.clientX;draw()}};c.onpointerup=c.onpointercancel=()=>drag=false;new ResizeObserver(draw).observe(c);draw()</script>", height=260)
-        readiness = st.session_state.sleep_advisor.check_readiness()
-        a, b = st.columns(2)
-        a.metric("Travel readiness", f"{readiness.score}/100")
-        b.metric("Readiness assessment", readiness.verdict)
-        st.subheader("Your workspace")
-        def open_page(page):
-            st.session_state.workspace_page = page
-        for items in [
-            [("Travel Readiness", "Prepare for your trip"), ("Emergency", "Configure location and contacts")],
-            [("Live Monitor", "Monitor fatigue in real time"), ("AI Assistant", "Explore sleep and safety guidance")],
-        ]:
-            for col, (page, description) in zip(st.columns(2), items):
-                with col:
-                    with st.container(border=True):
-                        st.subheader(page)
-                        st.write(description)
-                        st.button("Open " + page, key="home_" + page, on_click=open_page, args=(page,), use_container_width=True)
-        st.caption("Prototype only. Never rely on this application instead of rest or safe driving decisions.")
-    elif selected_page == "Live Monitor":
-        calib_message = st.session_state.pop("calib_message", None)
-
-        if running and st.session_state.logger is None:
-            start_session()
-        elif not running and st.session_state.logger is not None:
-            close_session()
-
-        if calib_message is not None:
-            calib_ok, calib_text = calib_message
-            if calib_ok:
-                st.success(calib_text)
+    perclos_col, ear_col, status_col = st.columns([1, 1, 1.6])
+    perclos_ph = perclos_col.empty()
+    ear_ph = ear_col.empty()
+    status_col.subheader("Fatigue status")
+    badge_ph = status_col.empty()
+    with st.expander("Additional telemetry"):
+        mar_col, yawns_col = st.columns(2)
+        mar_ph = mar_col.empty()
+        yawns_ph = yawns_col.empty()
+    with st.expander("Camera & sound check"):
+        if st.button("Check camera", disabled=running):
+            camera_available = get_camera(int(camera_index)) is not None
+            release_camera()
+            if camera_available:
+                st.success("Camera available.")
             else:
-                st.warning(calib_text)
+                st.warning("Camera unavailable. Check the camera index and permissions.")
+        st.audio(generate_beep_wav(), format="audio/wav")
+    sound_ph = st.empty()
+    with st.container(border=True):
+        st.subheader("Session timeline")
+        chart_ph = st.empty()
 
-        st.markdown(
-            '<p style="color:#718783;font-size:.72rem;font-weight:700;letter-spacing:.12em;margin-bottom:.35rem;">DRIVER SAFETY</p>'
-            '<h1 class="page-header">Live Monitor</h1>',
-            unsafe_allow_html=True,
+    if st.sidebar.button("I'm awake · Cancel alert", type="primary", use_container_width=True):
+        canceled = st.session_state.emergency_mgr.cancel()
+        (st.success if canceled else st.info)(
+            "Emergency countdown cancelled." if canceled else "No active emergency countdown."
         )
 
-        # Compact, horizontal status bar at the top
-        alert_ph = st.empty()
-        badge_ph = st.empty()
-        calib_ph = st.empty()
-
-        # Balanced 2-column grid ([1.2, 1] ratio)
-        left, right = st.columns([1.2, 1])
-        with left:
-            with st.container(border=True):
-                st.markdown('<h3 class="section-header">📷 Driver Camera Feed</h3>', unsafe_allow_html=True)
-                video_ph = st.empty()
-                info_ph = st.empty()
-
-        with right:
-            with st.container(border=True):
-                st.markdown('<h3 class="section-header">📊 Telemetry Metrics</h3>', unsafe_allow_html=True)
-                row1 = st.columns(2)
-                row2 = st.columns(2)
-                ear_ph = row1[0].empty()
-                mar_ph = row1[1].empty()
-                perclos_ph = row2[0].empty()
-                yawns_ph = row2[1].empty()
-
-                st.markdown('<h3 class="section-header">📈 Live EAR & PERCLOS Trend</h3>', unsafe_allow_html=True)
-                chart_ph = st.empty()
-                sound_ph = st.empty()
-
-        ui = {
-            "alert_banner": alert_ph,
-            "badge": badge_ph,
-            "calib": calib_ph,
-            "video": video_ph,
-            "info": info_ph,
-            "ear": ear_ph,
-            "mar": mar_ph,
-            "perclos": perclos_ph,
-            "yawns": yawns_ph,
-            "chart": chart_ph,
-            "sound": sound_ph,
+    if running:
+        if st.session_state.logger is None:
+            start_session()
+        settings = {
+            "camera_index": int(camera_index), "full_mesh": full_mesh,
+            "ear_threshold": ear_threshold, "mar_threshold": mar_threshold,
+            "consec_frames": consec_frames, "sound": sound_on, "calibrate": calibrate,
         }
+        ui = {
+            "alert_banner": alert_ph, "badge": badge_ph, "calib": calib_ph,
+            "video": video_ph, "info": info_ph, "ear": ear_ph, "mar": mar_ph,
+            "perclos": perclos_ph, "yawns": yawns_ph, "chart": chart_ph, "sound": sound_ph,
+        }
+        run_monitor(settings, st.session_state.logger, ui)
+        return
 
-        if running:
-            run_monitor(settings, st.session_state.logger, ui)
-        else:
-            release_camera()
-            release_extractor()
-            badge_ph.markdown(badge_html("MONITORING STOPPED", NO_FACE_COLOR), unsafe_allow_html=True)
-            video_ph.info("Turn on **Start monitoring** in the left sidebar to begin.")
+    if st.session_state.logger is not None:
+        close_session()
+    release_camera()
+    release_extractor()
+    perclos_ph.metric("PERCLOS", "—")
+    ear_ph.metric("EAR", "—")
+    badge_ph.caption("Monitoring is off")
+    video_ph.info("Turn on Monitoring to start the camera.")
+    chart_ph.caption("Live EAR and PERCLOS trends appear while monitoring.")
+    if st.session_state.last_summary:
+        with st.expander("Last drive summary"):
+            st.text(st.session_state.last_summary)
+            st.download_button(
+                "Download CSV log", data=st.session_state.last_csv,
+                file_name=st.session_state.last_csv_name, mime="text/csv",
+            )
 
-            if st.session_state.last_summary:
-                with st.container(border=True):
-                    st.markdown('<h3 class="section-header">📋 Last Drive Summary</h3>', unsafe_allow_html=True)
-                    st.text(st.session_state.last_summary)
-                    st.download_button(
-                        "Download CSV log",
-                        data=st.session_state.last_csv,
-                        file_name=st.session_state.last_csv_name,
-                        mime="text/csv",
-                        type="primary",
-                    )
 
-    elif selected_page == "Travel Readiness":
+def main() -> None:
+    st.set_page_config(page_title="DriveGuard", page_icon="🚗", layout="wide")
+    inject_css()
+    init_session_state()
+    selected = st.session_state.get("workspace_page", "Monitoring")
+    if selected not in PAGES:
+        selected = "Monitoring"
+    previous_page = st.session_state.get("_last_selected_page")
+    st.session_state["_last_selected_page"] = selected
+    render_navigation(selected)
+
+    if selected == "Monitoring":
+        render_monitor_tab()
+        return
+    for key in ("ear_threshold", "mar_threshold", "consec_frames"):
+        # Keep detection settings when Streamlit removes the page's widgets.
+        st.session_state[key] = st.session_state[key]
+    if st.session_state.logger is not None:
+        close_session()
+    release_camera()
+    release_extractor()
+
+    if selected == "Travel Readiness":
         render_sleep_advisor_tab()
-
-    elif selected_page == "Emergency":
-        previous_page = st.session_state.get("_last_selected_page")
-        request_fresh_location = previous_page != "Emergency"
-        render_emergency_tab(request_fresh_location=request_fresh_location)
-
-    elif selected_page == "AI Assistant":
+    elif selected == "Emergency":
+        render_emergency_tab(request_fresh_location=previous_page != selected)
+    else:
         render_chatbot_tab()
-
-    st.session_state["_last_selected_page"] = selected_page
 
 
 if __name__ == "__main__":
